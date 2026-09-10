@@ -993,7 +993,9 @@ app.listen(PORT, () => {
     `NEXUS running on port ${PORT}`
   );
 
-  console.log(
-    `ADMIN ACCOUNT: ${CALSGC}`
+const admin =
+  user &&
+  user.username.toLowerCase() === "calsgc";
+  );
   );
 });
