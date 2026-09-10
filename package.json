@@ -1,7 +1,7 @@
 {
   "name": "nexus-search",
-  "version": "2.0.0",
-  "description": "NEXUS Intelligence Search",
+  "version": "3.0.0",
+  "description": "NEXUS Search",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
