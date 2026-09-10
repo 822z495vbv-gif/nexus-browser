@@ -2,422 +2,813 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>NEXUS — Intelligence Search</title>
-  <link rel="stylesheet" href="/style.css">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <meta
+    name="theme-color"
+    content="#080a0f"
+  >
+
+  <title>NEXUS</title>
+
+  <link
+    rel="stylesheet"
+    href="/style.css"
+  >
 </head>
 
 <body>
 
-<div id="authScreen" class="auth-screen">
-  <div class="auth-card">
+<!-- =========================
+     AUTH
+========================= -->
 
-    <div class="auth-logo">N</div>
+<div id="authScreen">
 
-    <div class="auth-title">Welcome to NEXUS</div>
-    <div class="auth-subtitle">Intelligence Search</div>
+  <div class="auth-shell">
 
-    <div id="loginBox">
+    <div class="brand-big">
+      NEXUS
+    </div>
 
-      <label>Username</label>
-      <input id="loginUsername" autocomplete="username" placeholder="Enter username">
+    <div class="brand-sub">
+      SEARCH BEYOND
+    </div>
 
-      <label>Password</label>
-      <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter password">
+    <!-- LOGIN -->
 
-      <div id="loginError" class="auth-error"></div>
+    <div id="loginBox" class="auth-card">
 
-      <button id="loginBtn" class="primary-btn">
-        Sign in
-      </button>
+      <h1>Welcome back.</h1>
 
-      <button id="showRegister" class="text-btn">
-        Create account
+      <p class="auth-description">
+        Sign in to continue to NEXUS.
+      </p>
+
+      <form id="loginForm">
+
+        <label>Username</label>
+
+        <input
+          id="loginUsername"
+          autocomplete="username"
+          placeholder="Enter username"
+          required
+        >
+
+        <label>Password</label>
+
+        <input
+          id="loginPassword"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Enter password"
+          required
+        >
+
+        <div
+          id="loginError"
+          class="form-error"
+        ></div>
+
+        <button
+          id="loginBtn"
+          class="primary-btn"
+          type="submit"
+        >
+          Sign in
+        </button>
+
+      </form>
+
+      <button
+        id="showRegister"
+        class="text-btn"
+        type="button"
+      >
+        Create an account
       </button>
 
     </div>
 
-    <div id="registerBox" class="hidden">
+    <!-- REGISTER -->
 
-      <label>Username</label>
-      <input id="registerUsername" autocomplete="username" placeholder="Choose a username">
+    <div
+      id="registerBox"
+      class="auth-card hidden"
+    >
 
-      <label>Password</label>
-      <input id="registerPassword" type="password" autocomplete="new-password" placeholder="Create a password">
+      <h1>Create your account.</h1>
 
-      <div class="strength">
-        <div class="strength-label">
-          Password strength:
-          <span id="strengthText">NONE</span>
+      <p class="auth-description">
+        Your NEXUS account keeps your searches
+        and saved pages synced.
+      </p>
+
+      <form id="registerForm">
+
+        <label>Username</label>
+
+        <input
+          id="registerUsername"
+          autocomplete="username"
+          placeholder="Choose a username"
+          required
+        >
+
+        <label>Password</label>
+
+        <input
+          id="registerPassword"
+          type="password"
+          autocomplete="new-password"
+          placeholder="Create a password"
+          required
+        >
+
+        <div class="strength-wrap">
+
+          <div class="strength-track">
+            <div
+              id="strengthBar"
+              class="strength-bar"
+            ></div>
+          </div>
+
+          <span id="strengthText">
+            Password strength
+          </span>
+
         </div>
-        <div class="strength-track">
-          <div id="strengthBar"></div>
-        </div>
-      </div>
 
-      <label>Confirm password</label>
-      <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirm password">
+        <label>Confirm password</label>
 
-      <div id="registerError" class="auth-error"></div>
+        <input
+          id="confirmPassword"
+          type="password"
+          autocomplete="new-password"
+          placeholder="Repeat password"
+          required
+        >
 
-      <button id="registerBtn" class="primary-btn">
-        Create account
-      </button>
+        <div
+          id="registerError"
+          class="form-error"
+        ></div>
 
-      <button id="showLogin" class="text-btn">
+        <button
+          id="registerBtn"
+          class="primary-btn"
+          type="submit"
+        >
+          Create account
+        </button>
+
+      </form>
+
+      <button
+        id="showLogin"
+        class="text-btn"
+        type="button"
+      >
         Back to sign in
       </button>
 
     </div>
 
   </div>
+
 </div>
 
-<div id="app" class="app hidden">
 
-  <aside id="sidebar" class="sidebar">
+<!-- =========================
+     MAIN APP
+========================= -->
 
-    <div class="brand">
-      <div class="brand-mark">N</div>
-      <div>
-        <strong>NEXUS</strong>
-        <span>INTELLIGENCE SEARCH</span>
-      </div>
+<div
+  id="app"
+  class="app hidden"
+>
+
+  <!-- MOBILE OVERLAY -->
+
+  <div
+    id="overlay"
+    class="overlay"
+  ></div>
+
+  <!-- SIDEBAR -->
+
+  <aside id="sidebar">
+
+    <div class="sidebar-logo">
+      <span class="logo-mark">N</span>
+      <span>NEXUS</span>
     </div>
 
     <nav>
-      <button class="nav active" data-view="search">⌕ <span>Search</span></button>
-      <button class="nav" data-view="history">◷ <span>History</span></button>
-      <button class="nav" data-view="saved">☆ <span>Saved</span></button>
-      <button class="nav" data-view="settings">⚙ <span>Settings</span></button>
+
+      <button
+        class="nav active"
+        data-view="search"
+        type="button"
+      >
+        <span>⌕</span>
+        <span>Search</span>
+      </button>
+
+      <button
+        class="nav"
+        data-view="history"
+        type="button"
+      >
+        <span>◷</span>
+        <span>History</span>
+      </button>
+
+      <button
+        class="nav"
+        data-view="saved"
+        type="button"
+      >
+        <span>☆</span>
+        <span>Saved</span>
+      </button>
+
+      <button
+        class="nav"
+        data-view="settings"
+        type="button"
+      >
+        <span>⚙</span>
+        <span>Settings</span>
+      </button>
+
+      <button
+        id="adminNav"
+        class="nav admin-only hidden"
+        data-view="admin"
+        type="button"
+      >
+        <span>♛</span>
+        <span>Admin Panel</span>
+      </button>
+
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="status-dot"></div>
-      NEXUS ONLINE
+
+      <div class="account-mini">
+
+        <div
+          id="accountInitial"
+          class="avatar"
+        >
+          N
+        </div>
+
+        <div class="account-mini-info">
+
+          <strong id="accountName">
+            Account
+          </strong>
+
+          <span>
+            NEXUS account
+          </span>
+
+        </div>
+
+      </div>
+
     </div>
 
   </aside>
 
-  <div id="overlay" class="overlay"></div>
+
+  <!-- MAIN -->
 
   <main>
 
+    <!-- TOPBAR -->
+
     <header class="topbar">
 
-      <button id="menuBtn" class="icon-btn">☰</button>
+      <button
+        id="menuBtn"
+        class="icon-btn mobile-menu"
+        type="button"
+      >
+        ☰
+      </button>
 
-      <div class="online">
-        <i></i>
-        ONLINE
+      <div class="topbar-title">
+        NEXUS
       </div>
 
-      <div class="top-actions">
+      <button
+        id="profileBtn"
+        class="profile-btn"
+        type="button"
+      >
 
-        <button id="themeBtn" class="icon-btn">◐</button>
+        <span
+          id="profileInitial"
+          class="avatar small"
+        >
+          N
+        </span>
 
-        <button id="profileBtn" class="profile-btn">
-          <span id="profileInitial">N</span>
+        <span
+          id="accountName2"
+          class="profile-name"
+        >
+          Account
+        </span>
+
+        <span>⌄</span>
+
+      </button>
+
+      <div
+        id="accountMenu"
+        class="account-menu hidden"
+      >
+
+        <div class="account-menu-head">
+
+          <div
+            id="accountAvatar"
+            class="avatar"
+          >
+            N
+          </div>
+
+          <div>
+            <strong id="accountMenuName">
+              Account
+            </strong>
+
+            <span>
+              NEXUS account
+            </span>
+          </div>
+
+        </div>
+
+        <button
+          id="addAccount"
+          type="button"
+        >
+          ＋ Add account
+        </button>
+
+        <button
+          id="accountLogout"
+          type="button"
+        >
+          ↪ Sign out
         </button>
 
       </div>
 
     </header>
 
-    <section id="searchView" class="view active-view">
 
-      <div class="hero">
-        <div class="eyebrow">INTELLIGENCE SEARCH</div>
-        <h1>Ask anything.<br><span>Find everything.</span></h1>
-        <p>Search the web through the NEXUS intelligence interface.</p>
-      </div>
+    <!-- VIEWS -->
 
-      <form id="searchForm" class="search-box">
+    <div class="views">
 
-        <span class="search-icon">⌕</span>
+      <!-- SEARCH -->
 
-        <input
-          id="searchInput"
-          autocomplete="off"
-          placeholder="Search anything..."
+      <section
+        id="searchView"
+        class="view active-view"
+      >
+
+        <div class="hero">
+
+          <div class="eyebrow">
+            SEARCH BEYOND
+          </div>
+
+          <h1>
+            What are you
+            <span>looking for?</span>
+          </h1>
+
+          <p>
+            Search the web with a cleaner,
+            faster NEXUS experience.
+          </p>
+
+          <form
+            id="searchForm"
+            class="search-form"
+          >
+
+            <div class="search-box">
+
+              <span class="search-icon">
+                ⌕
+              </span>
+
+              <input
+                id="searchInput"
+                autocomplete="off"
+                placeholder="Search anything..."
+              >
+
+              <button
+                id="clearBtn"
+                class="clear-btn hidden"
+                type="button"
+              >
+                ×
+              </button>
+
+              <button
+                class="search-submit"
+                type="submit"
+              >
+                Search
+              </button>
+
+            </div>
+
+            <div
+              id="suggestions"
+              class="suggestions hidden"
+            ></div>
+
+          </form>
+
+          <div
+            id="searchTabs"
+            class="search-tabs"
+          >
+
+            <button
+              class="tab active"
+              data-tab="web"
+              type="button"
+            >
+              Web
+            </button>
+
+            <button
+              class="tab"
+              data-tab="news"
+              type="button"
+            >
+              News
+            </button>
+
+            <button
+              class="tab"
+              data-tab="images"
+              type="button"
+            >
+              Images
+            </button>
+
+            <button
+              class="tab"
+              data-tab="videos"
+              type="button"
+            >
+              Videos
+            </button>
+
+            <button
+              class="tab ai-tab"
+              data-tab="ai"
+              type="button"
+            >
+              ✦ AI
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <!-- SEARCH RESULTS -->
+
+        <div
+          id="resultsArea"
+          class="results-area"
         >
 
-        <button type="button" id="clearBtn" class="clear-btn">×</button>
+          <div
+            id="spinner"
+            class="spinner hidden"
+          >
+            <div></div>
+            <span>Searching NEXUS...</span>
+          </div>
 
-        <button type="submit" class="search-submit">
-          <span id="searchText">Search</span>
-          <span id="spinner" class="spinner hidden"></span>
-          <span>→</span>
-        </button>
+          <div
+            id="searchText"
+            class="search-text"
+          ></div>
 
-        <div id="suggestions" class="suggestions"></div>
+          <div id="results"></div>
 
-      </form>
-
-      <div class="suggestions-row">
-        <button data-query="Artificial Intelligence">Artificial Intelligence</button>
-        <button data-query="Space exploration">Space exploration</button>
-        <button data-query="Cybersecurity">Cybersecurity</button>
-      </div>
-
-      <section id="results" class="results"></section>
-
-    </section>
-
-    <section id="historyView" class="view">
-      <div class="page-heading">
-        <div>
-          <div class="eyebrow">PERSONAL DATA</div>
-          <h2>Search History</h2>
         </div>
-        <button id="clearHistoryBtn" class="danger-btn">Clear</button>
-      </div>
-      <div id="historyList" class="list"></div>
-    </section>
 
-    <section id="savedView" class="view">
-      <div class="page-heading">
-        <div>
-          <div class="eyebrow">PERSONAL DATA</div>
-          <h2>Saved Results</h2>
-        </div>
-        <button id="clearSavedBtn" class="danger-btn">Clear</button>
-      </div>
-      <div id="savedList" class="list"></div>
-    </section>
+      </section>
 
-    <section id="settingsView" class="view">
-      <div class="page-heading">
-        <div>
-          <div class="eyebrow">NEXUS CONTROL</div>
-          <h2>Settings</h2>
-        </div>
-      </div>
 
-      <div class="settings-card">
-        <div>
-          <strong>Appearance</strong>
-          <p>Switch between light and dark mode.</p>
-        </div>
-        <button id="settingsTheme" class="secondary-btn">Toggle</button>
-      </div>
+      <!-- HISTORY -->
 
-      <div class="settings-card">
-        <div>
-          <strong>Account</strong>
-          <p id="settingsAccount">Signed in</p>
+      <section
+        id="historyView"
+        class="view"
+      >
+
+        <div class="page-header">
+
+          <div>
+
+            <div class="eyebrow">
+              YOUR ACTIVITY
+            </div>
+
+            <h1>History</h1>
+
+            <p>
+              Your recent NEXUS searches.
+            </p>
+
+          </div>
+
+          <button
+            id="clearHistoryBtn"
+            class="secondary-btn"
+            type="button"
+          >
+            Clear history
+          </button>
+
         </div>
-        <button id="settingsLogout" class="danger-btn">Sign out</button>
-      </div>
-    </section>
+
+        <div id="historyList"></div>
+
+      </section>
+
+
+      <!-- SAVED -->
+
+      <section
+        id="savedView"
+        class="view"
+      >
+
+        <div class="page-header">
+
+          <div>
+
+            <div class="eyebrow">
+              YOUR LIBRARY
+            </div>
+
+            <h1>Saved</h1>
+
+            <p>
+              Pages you've saved for later.
+            </p>
+
+          </div>
+
+          <button
+            id="clearSavedBtn"
+            class="secondary-btn"
+            type="button"
+          >
+            Clear saved
+          </button>
+
+        </div>
+
+        <div id="savedList"></div>
+
+      </section>
+
+
+      <!-- SETTINGS -->
+
+      <section
+        id="settingsView"
+        class="view"
+      >
+
+        <div class="page-header">
+
+          <div>
+
+            <div class="eyebrow">
+              NEXUS
+            </div>
+
+            <h1>Settings</h1>
+
+            <p>
+              Customize your NEXUS experience.
+            </p>
+
+          </div>
+
+        </div>
+
+        <div class="settings-grid">
+
+          <div class="setting-card">
+
+            <div>
+              <strong>Appearance</strong>
+              <span>
+                Choose your interface theme.
+              </span>
+            </div>
+
+            <button
+              id="themeBtn"
+              class="secondary-btn"
+              type="button"
+            >
+              Toggle theme
+            </button>
+
+          </div>
+
+          <div class="setting-card">
+
+            <div>
+              <strong>Account</strong>
+              <span id="settingsAccount">
+                Account
+              </span>
+            </div>
+
+            <button
+              id="settingsLogout"
+              class="secondary-btn"
+              type="button"
+            >
+              Sign out
+            </button>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- ADMIN -->
+
+      <section
+        id="adminView"
+        class="view"
+      >
+
+        <div class="page-header">
+
+          <div>
+
+            <div class="eyebrow">
+              NEXUS CONTROL CENTER
+            </div>
+
+            <h1>Admin Panel</h1>
+
+            <p>
+              Manage NEXUS system status
+              and maintenance.
+            </p>
+
+          </div>
+
+        </div>
+
+        <div class="admin-grid">
+
+          <div class="admin-card">
+
+            <div class="admin-card-top">
+
+              <span>
+                System Status
+              </span>
+
+              <span id="adminStatusBadge">
+                ● ONLINE
+              </span>
+
+            </div>
+
+            <div
+              id="adminStatusText"
+              class="admin-status-big"
+            >
+              NEXUS is online.
+            </div>
+
+          </div>
+
+
+          <div class="admin-card">
+
+            <div class="admin-card-title">
+              Maintenance
+            </div>
+
+            <p>
+              Lock NEXUS while you're
+              working on updates.
+              Your admin account can
+              still access it.
+            </p>
+
+            <input
+              id="maintenanceTitle"
+              type="text"
+              placeholder="Maintenance title"
+            >
+
+            <textarea
+              id="maintenanceMessage"
+              rows="4"
+              placeholder="Maintenance message"
+            ></textarea>
+
+            <div class="admin-actions">
+
+              <button
+                id="lockWebsite"
+                class="danger-btn"
+                type="button"
+              >
+                🔒 Lock Website
+              </button>
+
+              <button
+                id="unlockWebsite"
+                class="success-btn"
+                type="button"
+              >
+                🔓 Unlock Website
+              </button>
+
+            </div>
+
+            <div
+              id="adminMessage"
+              class="admin-message"
+            ></div>
+
+          </div>
+
+
+          <div class="admin-card">
+
+            <div class="admin-card-title">
+              System Information
+            </div>
+
+            <div class="admin-stat">
+              <span>Users</span>
+              <strong id="adminUsers">—</strong>
+            </div>
+
+            <div class="admin-stat">
+              <span>Sessions</span>
+              <strong id="adminSessions">—</strong>
+            </div>
+
+            <div class="admin-stat">
+              <span>Administrator</span>
+              <strong>CALSGC</strong>
+            </div>
+
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
 
   </main>
 
 </div>
 
-<div id="accountMenu" class="account-menu hidden">
-
-  <div class="account-header">
-    <div id="accountAvatar" class="big-avatar">N</div>
-    <div>
-      <strong id="accountName">NEXUS</strong>
-      <span>Signed in</span>
-    </div>
-  </div>
-
-  <div class="account-item current">
-    <span id="accountInitial">N</span>
-    <div>
-      <strong id="accountName2">NEXUS</strong>
-      <small>Current account</small>
-    </div>
-    <b>✓</b>
-  </div>
-
-  <button id="addAccount" class="account-action">
-    ＋ Add another account
-  </button>
-
-  <button id="accountLogout" class="account-action logout">
-    ↪ Sign out
-  </button>
-
-</div>
-
 <script src="/app.js"></script>
+
 </body>
 </html>
-<button
-  id="adminNav"
-  class="nav admin-only hidden"
-  data-view="admin"
-  type="button"
->
-  <span>♛</span>
-  <span>Admin Panel</span>
-</button><!-- =========================
-     ADMIN VIEW
-========================= -->
-
-<section id="adminView" class="view">
-
-  <div class="page-header">
-
-    <div>
-
-      <div class="eyebrow">
-        NEXUS CONTROL CENTER
-      </div>
-
-      <h1>Admin Panel</h1>
-
-      <p>
-        Manage NEXUS system status and maintenance.
-      </p>
-
-    </div>
-
-  </div>
-
-
-  <div class="admin-grid">
-
-
-    <!-- SYSTEM STATUS -->
-
-    <div class="admin-card">
-
-      <div class="admin-card-top">
-
-        <span>
-          System Status
-        </span>
-
-        <span id="adminStatusBadge">
-          ● ONLINE
-        </span>
-
-      </div>
-
-
-      <div
-        id="adminStatusText"
-        class="admin-status-big"
-      >
-        NEXUS is online.
-      </div>
-
-    </div>
-
-
-    <!-- MAINTENANCE -->
-
-    <div class="admin-card">
-
-      <div class="admin-card-title">
-        Maintenance
-      </div>
-
-      <p>
-        Lock NEXUS while you're working on updates.
-        Your admin account can still access it.
-      </p>
-
-
-      <input
-        id="maintenanceTitle"
-        type="text"
-        placeholder="Maintenance title"
-      >
-
-
-      <textarea
-        id="maintenanceMessage"
-        placeholder="Maintenance message"
-        rows="4"
-      ></textarea>
-
-
-      <div class="admin-actions">
-
-        <button
-          id="lockWebsite"
-          class="danger-btn"
-          type="button"
-        >
-          🔒 Lock Website
-        </button>
-
-
-        <button
-          id="unlockWebsite"
-          class="success-btn"
-          type="button"
-        >
-          🔓 Unlock Website
-        </button>
-
-      </div>
-
-
-      <div
-        id="adminMessage"
-        class="admin-message"
-      ></div>
-
-    </div>
-
-
-    <!-- SYSTEM INFORMATION -->
-
-    <div class="admin-card">
-
-      <div class="admin-card-title">
-        System Information
-      </div>
-
-
-      <div class="admin-stat">
-
-        <span>
-          Users
-        </span>
-
-        <strong id="adminUsers">
-          —
-        </strong>
-
-      </div>
-
-
-      <div class="admin-stat">
-
-        <span>
-          Sessions
-        </span>
-
-        <strong id="adminSessions">
-          —
-        </strong>
-
-      </div>
-
-
-      <div class="admin-stat">
-
-        <span>
-          Administrator
-        </span>
-
-        <strong>
-          CALSGC
-        </strong>
-
-      </div>
-
-    </div>
-
-
-  </div>
-
-</section>
