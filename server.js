@@ -1,39 +1,28 @@
-"use strict";
-
 const express = require("express");
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
 const crypto = require("crypto");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const ADMIN_USERNAME = "CALSGC";
+
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "nexus.json");
 
-const ADMIN_USERNAME = "CALSGC";
-const SESSION_DAYS = 7;
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-
-/* =========================
-   DATABASE
-========================= */
-
-function defaultDB() {
+function freshDB() {
   return {
     users: [],
     sessions: [],
-    settings: {
-      maintenance: false,
-      maintenanceTitle: "NEXUS is upgrading",
-      maintenanceMessage:
-        "We're making some improvements. We'll be back shortly."
+    history: {},
+    saved: {},
+    maintenance: {
+      locked: false,
+      title: "NEXUS is under maintenance",
+      message: "We're making improvements. Please check back soon."
     }
   };
 }
@@ -41,162 +30,160 @@ function defaultDB() {
 function loadDB() {
   try {
     if (!fs.existsSync(DB_FILE)) {
-      const fresh = defaultDB();
-      saveDB(fresh);
-      return fresh;
+      return freshDB();
     }
 
-    const raw = fs.readFileSync(DB_FILE, "utf8");
-    const data = JSON.parse(raw);
+    const data = JSON.parse(
+      fs.readFileSync(DB_FILE, "utf8")
+    );
 
-    data.users ||= [];
-    data.sessions ||= [];
-    data.settings ||= {};
+    const base = freshDB();
 
-    data.settings.maintenance ??= false;
-    data.settings.maintenanceTitle ??= "NEXUS is upgrading";
-    data.settings.maintenanceMessage ??=
-      "We're making some improvements. We'll be back shortly.";
-
-    return data;
-  } catch (err) {
-    console.error("DATABASE ERROR:", err);
-
-    const fresh = defaultDB();
-    saveDB(fresh);
-
-    return fresh;
+    return {
+      ...base,
+      ...data,
+      history: data.history || {},
+      saved: data.saved || {},
+      maintenance: {
+        ...base.maintenance,
+        ...(data.maintenance || {})
+      }
+    };
+  } catch {
+    return freshDB();
   }
 }
 
-function saveDB(data) {
+let db = loadDB();
+
+function saveDB() {
   fs.writeFileSync(
     DB_FILE,
-    JSON.stringify(data, null, 2),
-    "utf8"
+    JSON.stringify(db, null, 2)
   );
 }
 
-function clean(value) {
-  return String(value || "").trim();
+function cleanText(value, max = 500) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
 }
-
-/* =========================
-   HTML CLEANER
-========================= */
 
 function stripHTML(value) {
   return String(value || "")
     .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#039;/gi, "'")
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#(\d+);/g, (_, n) => {
-      try {
-        return String.fromCodePoint(Number(n));
-      } catch {
-        return "";
-      }
-    })
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => {
-      try {
-        return String.fromCodePoint(
-          parseInt(n, 16)
-        );
-      } catch {
-        return "";
-      }
-    })
-    .replace(/<[^>]*>/g, " ")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/* =========================
-   PASSWORD SECURITY
-========================= */
+function passwordHash(password, salt) {
+  return crypto
+    .scryptSync(password, salt, 64)
+    .toString("hex");
+}
 
-function hashPassword(password) {
+function createPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
 
-  const hash = crypto.scryptSync(
-    password,
+  return {
     salt,
-    64
-  ).toString("hex");
-
-  return `${salt}:${hash}`;
+    hash: passwordHash(password, salt)
+  };
 }
 
-function checkPassword(password, stored) {
-  try {
-    const [salt, originalHash] =
-      String(stored).split(":");
+function verifyPassword(password, salt, hash) {
+  const actual = passwordHash(password, salt);
 
-    if (!salt || !originalHash) {
-      return false;
-    }
+  const a = Buffer.from(actual, "hex");
+  const b = Buffer.from(hash, "hex");
 
-    const hash = crypto.scryptSync(
-      password,
-      salt,
-      64
-    );
+  if (a.length !== b.length) return false;
 
-    const original =
-      Buffer.from(originalHash, "hex");
-
-    if (hash.length !== original.length) {
-      return false;
-    }
-
-    return crypto.timingSafeEqual(
-      hash,
-      original
-    );
-  } catch {
-    return false;
-  }
+  return crypto.timingSafeEqual(a, b);
 }
 
-/* =========================
-   SESSIONS
-========================= */
+function createToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
 
-function hashToken(token) {
+function tokenHash(token) {
   return crypto
     .createHash("sha256")
     .update(token)
     .digest("hex");
 }
 
-function createSession(userId) {
-  const db = loadDB();
+function getToken(req) {
+  const cookies = req.headers.cookie || "";
 
-  const token =
-    crypto.randomBytes(32).toString("hex");
+  const match = cookies
+    .split(";")
+    .map(x => x.trim())
+    .find(x => x.startsWith("nexus_session="));
 
-  db.sessions.push({
-    token: hashToken(token),
-    userId,
-    expires:
-      Date.now() +
-      SESSION_DAYS * 24 * 60 * 60 * 1000
-  });
+  return match
+    ? decodeURIComponent(
+        match.split("=").slice(1).join("=")
+      )
+    : null;
+}
 
-  db.sessions =
-    db.sessions.filter(
-      session =>
-        session.expires > Date.now()
-    );
+function getUser(req) {
+  const token = getToken(req);
 
-  saveDB(db);
+  if (!token) return null;
 
-  return token;
+  const hashed = tokenHash(token);
+
+  const session = db.sessions.find(
+    s => s.token === hashed
+  );
+
+  if (!session) return null;
+
+  return db.users.find(
+    u => u.id === session.userId
+  ) || null;
+}
+
+function isAdmin(user) {
+  return !!(
+    user &&
+    user.username.toLowerCase() ===
+      ADMIN_USERNAME.toLowerCase()
+  );
+}
+
+function requireAuth(req, res, next) {
+  const user = getUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "You must be logged in."
+    });
+  }
+
+  req.user = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  const user = getUser(req);
+
+  if (!user || !isAdmin(user)) {
+    return res.status(403).json({
+      error: "Admin access denied."
+    });
+  }
+
+  req.user = user;
+  next();
 }
 
 function setSessionCookie(res, token) {
@@ -207,321 +194,278 @@ function setSessionCookie(res, token) {
 
   res.setHeader(
     "Set-Cookie",
-    `nexus_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`
+    `nexus_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure}`
   );
 }
 
-function getCookie(req, name) {
-  const cookies =
-    req.headers.cookie || "";
-
-  const parts = cookies.split(";");
-
-  for (const part of parts) {
-    const [key, ...value] =
-      part.trim().split("=");
-
-    if (key === name) {
-      return decodeURIComponent(
-        value.join("=")
-      );
-    }
-  }
-
-  return null;
-}
-
-function getUser(req) {
-  const token =
-    getCookie(req, "nexus_session");
-
-  if (!token) return null;
-
-  const db = loadDB();
-
-  const session =
-    db.sessions.find(
-      s =>
-        s.token === hashToken(token) &&
-        s.expires > Date.now()
-    );
-
-  if (!session) return null;
-
-  return (
-    db.users.find(
-      user => user.id === session.userId
-    ) || null
+function clearSessionCookie(res) {
+  res.setHeader(
+    "Set-Cookie",
+    "nexus_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax"
   );
 }
 
-function requireAuth(req, res, next) {
-  const user = getUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      ok: false,
-      error: "You are not signed in."
-    });
-  }
-
-  req.user = user;
-  next();
-}
-
-function isAdmin(user) {
-  return (
-    user &&
-    user.username.toLowerCase() ===
-      ADMIN_USERNAME.toLowerCase()
-  );
-}
-
-function requireAdmin(req, res, next) {
-  if (!isAdmin(req.user)) {
-    return res.status(403).json({
-      ok: false,
-      error: "Administrator access required."
-    });
-  }
-
-  next();
-}
+app.use(express.json({ limit: "1mb" }));
 
 /* =========================
-   REGISTER
+   AUTH
 ========================= */
 
 app.post("/api/register", (req, res) => {
-  const username = clean(req.body.username);
-  const password =
-    String(req.body.password || "");
+  const username = cleanText(
+    req.body.username,
+    24
+  );
 
-  if (!username || !password) {
-    return res.status(400).json({
-      ok: false,
-      error: "Username and password are required."
-    });
-  }
+  const password = String(
+    req.body.password || ""
+  );
 
   if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) {
     return res.status(400).json({
-      ok: false,
       error:
-        "Username must be 3-24 characters and use letters, numbers, dots, hyphens or underscores."
+        "Username must be 3-24 characters and use letters, numbers, _, ., or -."
     });
   }
 
   if (password.length < 8) {
     return res.status(400).json({
-      ok: false,
       error:
         "Password must be at least 8 characters."
     });
   }
 
-  const db = loadDB();
-
-  const exists =
-    db.users.some(
-      user =>
-        user.username.toLowerCase() ===
-        username.toLowerCase()
-    );
+  const exists = db.users.some(
+    u =>
+      u.username.toLowerCase() ===
+      username.toLowerCase()
+  );
 
   if (exists) {
     return res.status(409).json({
-      ok: false,
       error: "That username already exists."
     });
   }
 
+  const { salt, hash } =
+    createPassword(password);
+
   const user = {
     id: crypto.randomUUID(),
     username,
-    password: hashPassword(password),
-    history: [],
-    saved: [],
-    createdAt: Date.now()
+    salt,
+    passwordHash: hash,
+    createdAt: new Date().toISOString()
   };
 
   db.users.push(user);
+  db.history[user.id] = [];
+  db.saved[user.id] = [];
 
-  saveDB(db);
+  const token = createToken();
 
-  const token =
-    createSession(user.id);
+  db.sessions.push({
+    token: tokenHash(token),
+    userId: user.id,
+    createdAt: new Date().toISOString()
+  });
+
+  saveDB();
 
   setSessionCookie(res, token);
 
   res.json({
-    ok: true,
     user: {
-      id: user.id,
-      username: user.username,
-      admin: isAdmin(user)
+      ...publicUser(user)
     }
   });
 });
-
-/* =========================
-   LOGIN
-========================= */
 
 app.post("/api/login", (req, res) => {
-  const username = clean(req.body.username);
-  const password =
-    String(req.body.password || "");
+  const username = cleanText(
+    req.body.username,
+    24
+  );
 
-  if (!username || !password) {
-    return res.status(400).json({
-      ok: false,
-      error:
-        "Enter your username and password."
-    });
-  }
+  const password = String(
+    req.body.password || ""
+  );
 
-  const db = loadDB();
+  const user = db.users.find(
+    u =>
+      u.username.toLowerCase() ===
+      username.toLowerCase()
+  );
 
-  const user =
-    db.users.find(
-      u =>
-        u.username.toLowerCase() ===
-        username.toLowerCase()
-    );
-
-  if (!user || !checkPassword(
-    password,
-    user.password
-  )) {
+  if (
+    !user ||
+    !verifyPassword(
+      password,
+      user.salt,
+      user.passwordHash
+    )
+  ) {
     return res.status(401).json({
-      ok: false,
-      error:
-        "Incorrect username or password."
+      error: "Invalid username or password."
     });
   }
 
-  const token =
-    createSession(user.id);
+  const token = createToken();
+
+  db.sessions.push({
+    token: tokenHash(token),
+    userId: user.id,
+    createdAt: new Date().toISOString()
+  });
+
+  saveDB();
 
   setSessionCookie(res, token);
 
   res.json({
-    ok: true,
-    user: {
-      id: user.id,
-      username: user.username,
-      admin: isAdmin(user)
-    }
+    user: publicUser(user)
   });
 });
 
-/* =========================
-   LOGOUT
-========================= */
-
 app.post("/api/logout", (req, res) => {
-  const token =
-    getCookie(req, "nexus_session");
+  const token = getToken(req);
 
   if (token) {
-    const db = loadDB();
+    const hashed = tokenHash(token);
 
     db.sessions =
       db.sessions.filter(
-        session =>
-          session.token !==
-          hashToken(token)
+        s => s.token !== hashed
       );
 
-    saveDB(db);
+    saveDB();
   }
 
-  res.setHeader(
-    "Set-Cookie",
-    "nexus_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
-  );
+  clearSessionCookie(res);
 
-  res.json({ ok: true });
+  res.json({
+    ok: true
+  });
 });
-
-/* =========================
-   CURRENT USER
-========================= */
 
 app.get("/api/me", (req, res) => {
   const user = getUser(req);
 
   if (!user) {
     return res.status(401).json({
-      ok: false
+      error: "Not logged in."
     });
   }
 
-  const db = loadDB();
-
   res.json({
-    ok: true,
-
-    user: {
-      id: user.id,
-      username: user.username,
-      admin: isAdmin(user)
-    },
-
-    history: user.history || [],
-    saved: user.saved || [],
-
-    maintenance: isAdmin(user)
-      ? db.settings.maintenance
-      : undefined
+    user: publicUser(user)
   });
+});
+
+/* =========================
+   SEARCH
+========================= */
+
+app.get("/api/search", async (req, res) => {
+  const query = cleanText(
+    req.query.q,
+    200
+  );
+
+  if (!query) {
+    return res.status(400).json({
+      error: "Search query is empty."
+    });
+  }
+
+  try {
+    const url =
+      "https://en.wikipedia.org/api/rest_v1/page/summary/" +
+      encodeURIComponent(query);
+
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "NEXUS-Search/3.0"
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+
+      if (
+        data.type !== "https://mediawiki.org/wiki/HyperSwitch/errors/not_found" &&
+        data.title
+      ) {
+        const result = {
+          title: stripHTML(data.title),
+          description: stripHTML(
+            data.extract ||
+              "No description available."
+          ),
+          url:
+            data.content_urls?.desktop?.page ||
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(
+              data.title.replace(/ /g, "_")
+            )}`,
+          source: "Wikipedia",
+          image:
+            data.thumbnail?.source || null
+        };
+
+        const user = getUser(req);
+
+        if (user) {
+          const list =
+            db.history[user.id] || [];
+
+          list.unshift({
+            id: crypto.randomUUID(),
+            query,
+            title: result.title,
+            url: result.url,
+            createdAt:
+              new Date().toISOString()
+          });
+
+          db.history[user.id] =
+            list.slice(0, 50);
+
+          saveDB();
+        }
+
+        return res.json({
+          mode: "result",
+          result
+        });
+      }
+    }
+
+    return res.json({
+      mode: "fallback",
+      query,
+      message:
+        "NEXUS couldn't find a direct result for this search.",
+      fallback:
+        `https://www.google.com/search?q=${encodeURIComponent(query)}`
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Search service temporarily unavailable."
+    });
+  }
 });
 
 /* =========================
    HISTORY
 ========================= */
 
-app.post(
+app.get(
   "/api/history",
   requireAuth,
   (req, res) => {
-
-    const query =
-      clean(req.body.query);
-
-    if (!query) {
-      return res.status(400).json({
-        ok: false
-      });
-    }
-
-    const db = loadDB();
-
-    const user =
-      db.users.find(
-        u => u.id === req.user.id
-      );
-
-    user.history =
-      user.history || [];
-
-    user.history = [
-      {
-        query,
-        time: Date.now()
-      },
-      ...user.history.filter(
-        item =>
-          item.query.toLowerCase() !==
-          query.toLowerCase()
-      )
-    ].slice(0, 100);
-
-    saveDB(db);
-
     res.json({
-      ok: true
+      history:
+        db.history[req.user.id] || []
     });
   }
 );
@@ -530,17 +474,8 @@ app.delete(
   "/api/history",
   requireAuth,
   (req, res) => {
-
-    const db = loadDB();
-
-    const user =
-      db.users.find(
-        u => u.id === req.user.id
-      );
-
-    user.history = [];
-
-    saveDB(db);
+    db.history[req.user.id] = [];
+    saveDB();
 
     res.json({
       ok: true
@@ -552,43 +487,76 @@ app.delete(
    SAVED
 ========================= */
 
+app.get(
+  "/api/saved",
+  requireAuth,
+  (req, res) => {
+    res.json({
+      saved:
+        db.saved[req.user.id] || []
+    });
+  }
+);
+
 app.post(
   "/api/saved",
   requireAuth,
   (req, res) => {
+    const title = cleanText(
+      req.body.title,
+      200
+    );
 
-    const db = loadDB();
+    const url = cleanText(
+      req.body.url,
+      1000
+    );
 
-    const user =
-      db.users.find(
-        u => u.id === req.user.id
-      );
-
-    user.saved =
-      user.saved || [];
-
-    const item = {
-      title: clean(req.body.title),
-      url: clean(req.body.url),
-      description:
-        clean(req.body.description),
-      excerpt:
-        clean(req.body.excerpt),
-      time: Date.now()
-    };
-
-    if (!item.title || !item.url) {
+    if (!title || !url) {
       return res.status(400).json({
-        ok: false
+        error: "Invalid saved item."
       });
     }
 
-    user.saved.unshift(item);
+    const list =
+      db.saved[req.user.id] || [];
 
-    user.saved =
-      user.saved.slice(0, 100);
+    const exists = list.some(
+      item => item.url === url
+    );
 
-    saveDB(db);
+    if (!exists) {
+      list.unshift({
+        id: crypto.randomUUID(),
+        title,
+        url,
+        createdAt:
+          new Date().toISOString()
+      });
+    }
+
+    db.saved[req.user.id] =
+      list.slice(0, 100);
+
+    saveDB();
+
+    res.json({
+      ok: true
+    });
+  }
+);
+
+app.delete(
+  "/api/saved/:id",
+  requireAuth,
+  (req, res) => {
+    db.saved[req.user.id] =
+      (db.saved[req.user.id] || [])
+        .filter(
+          item => item.id !== req.params.id
+        );
+
+    saveDB();
 
     res.json({
       ok: true
@@ -600,17 +568,9 @@ app.delete(
   "/api/saved",
   requireAuth,
   (req, res) => {
+    db.saved[req.user.id] = [];
 
-    const db = loadDB();
-
-    const user =
-      db.users.find(
-        u => u.id === req.user.id
-      );
-
-    user.saved = [];
-
-    saveDB(db);
+    saveDB();
 
     res.json({
       ok: true
@@ -619,85 +579,58 @@ app.delete(
 );
 
 /* =========================
-   MAINTENANCE CHECK
-========================= */
-
-app.get(
-  "/api/system",
-  (req, res) => {
-
-    const db = loadDB();
-
-    res.json({
-      ok: true,
-      maintenance:
-        db.settings.maintenance,
-      title:
-        db.settings.maintenanceTitle,
-      message:
-        db.settings.maintenanceMessage
-    });
-  }
-);
-
-/* =========================
-   ADMIN STATUS
+   ADMIN
 ========================= */
 
 app.get(
   "/api/admin/status",
-  requireAuth,
   requireAdmin,
   (req, res) => {
-
-    const db = loadDB();
-
     res.json({
-      ok: true,
-
       maintenance:
-        db.settings.maintenance,
+        db.maintenance.locked,
 
       title:
-        db.settings.maintenanceTitle,
+        db.maintenance.title,
 
       message:
-        db.settings.maintenanceMessage,
+        db.maintenance.message,
 
-      users:
-        db.users.length,
+      users: db.users.length,
 
-      sessions:
-        db.sessions.length
+      sessions: db.sessions.length,
+
+      administrator:
+        ADMIN_USERNAME
     });
   }
 );
 
-/* =========================
-   ADMIN LOCK
-========================= */
-
 app.post(
   "/api/admin/lock",
-  requireAuth,
   requireAdmin,
   (req, res) => {
+    const title =
+      cleanText(
+        req.body.title,
+        120
+      ) ||
+      "NEXUS is under maintenance";
 
-    const db = loadDB();
+    const message =
+      cleanText(
+        req.body.message,
+        500
+      ) ||
+      "We're making improvements. Please check back soon.";
 
-    db.settings.maintenance = true;
+    db.maintenance = {
+      locked: true,
+      title,
+      message
+    };
 
-    if (req.body.title) {
-      db.settings.maintenanceTitle =
-        clean(req.body.title);
-    }
-
-    if (req.body.message) {
-      db.settings.maintenanceMessage =
-        clean(req.body.message);
-    }
-
-    saveDB(db);
+    saveDB();
 
     res.json({
       ok: true,
@@ -706,21 +639,13 @@ app.post(
   }
 );
 
-/* =========================
-   ADMIN UNLOCK
-========================= */
-
 app.post(
   "/api/admin/unlock",
-  requireAuth,
   requireAdmin,
   (req, res) => {
+    db.maintenance.locked = false;
 
-    const db = loadDB();
-
-    db.settings.maintenance = false;
-
-    saveDB(db);
+    saveDB();
 
     res.json({
       ok: true,
@@ -729,273 +654,126 @@ app.post(
   }
 );
 
-/* =========================
-   ADMIN INFO
-========================= */
-
 app.get(
   "/api/admin/users",
-  requireAuth,
   requireAdmin,
   (req, res) => {
-
-    const db = loadDB();
-
     res.json({
-      ok: true,
-
-      users: db.users.map(user => ({
-        id: user.id,
-        username: user.username,
-        createdAt: user.createdAt,
-        historyCount:
-          (user.history || []).length,
-        savedCount:
-          (user.saved || []).length
-      }))
+      users: db.users.map(
+        publicUser
+      )
     });
   }
 );
 
 /* =========================
-   SEARCH
+   MAINTENANCE PAGE
 ========================= */
 
-app.get(
-  "/api/search",
-  async (req, res) => {
+function maintenancePage() {
+  const title =
+    cleanText(
+      db.maintenance.title,
+      120
+    );
 
-    const query =
-      clean(req.query.q);
+  const message =
+    cleanText(
+      db.maintenance.message,
+      500
+    );
 
-    if (!query) {
-      return res.status(400).json({
-        ok: false,
-        error: "Enter something to search."
-      });
-    }
-
-    try {
-
-      const url =
-        `https://en.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=10`;
-
-      const response =
-        await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(
-          "Wikipedia search failed."
-        );
-      }
-
-      const data =
-        await response.json();
-
-      const results =
-        (data.pages || []).map(page => ({
-          title:
-            stripHTML(page.title),
-
-          description:
-            stripHTML(page.description),
-
-          excerpt:
-            stripHTML(page.excerpt),
-
-          url:
-            page.content_urls?.desktop?.page ||
-            `https://en.wikipedia.org/wiki/${encodeURIComponent(page.key || page.title)}`
-        }));
-
-      res.json({
-        ok: true,
-        query,
-        found: results.length > 0,
-        results,
-
-        googleURL:
-          `https://www.google.com/search?q=${encodeURIComponent(query)}`
-      });
-
-    } catch (error) {
-
-      console.error(
-        "SEARCH ERROR:",
-        error
-      );
-
-      res.status(500).json({
-        ok: false,
-        error:
-          "NEXUS search is temporarily unavailable."
-      });
-    }
-  }
-);
-
-/* =========================
-   WEBSITE LOCK
-========================= */
-
-app.get(
-  "*splat",
-  (req, res) => {
-
-    const user = getUser(req);
-    const db = loadDB();
-
-    const allowedAdmin =
-      isAdmin(user);
-
-    if (
-      db.settings.maintenance &&
-      !allowedAdmin &&
-      !req.path.startsWith("/api/")
-    ) {
-
-      return res.send(`
-<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1">
-<title>NEXUS — Maintenance</title>
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} • NEXUS</title>
 <style>
-* {
-  box-sizing: border-box;
+*{box-sizing:border-box}
+body{
+margin:0;
+min-height:100vh;
+display:flex;
+align-items:center;
+justify-content:center;
+padding:24px;
+font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+background:#07090d;
+color:#fff
 }
-
-body {
-  margin: 0;
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #07090d;
-  color: white;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
+.card{
+width:min(620px,100%);
+padding:42px;
+border:1px solid #252a35;
+border-radius:28px;
+background:#0e1118;
+box-shadow:0 30px 100px rgba(0,0,0,.45)
 }
-
-.card {
-  width: min(520px, 90%);
-  padding: 42px;
-  border: 1px solid #202631;
-  border-radius: 28px;
-  background: #0d1118;
-  text-align: center;
-  box-shadow:
-    0 30px 80px rgba(0,0,0,.45);
+.logo{
+font-size:14px;
+font-weight:900;
+letter-spacing:.2em;
+margin-bottom:40px
 }
-
-.logo {
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: -2px;
-  margin-bottom: 35px;
+.badge{
+display:inline-block;
+padding:8px 12px;
+border-radius:999px;
+background:#1b202b;
+color:#aeb7c8;
+font-size:12px;
+font-weight:800;
+letter-spacing:.08em
 }
-
-.icon {
-  width: 70px;
-  height: 70px;
-  margin: auto;
-  display: grid;
-  place-items: center;
-  border-radius: 20px;
-  background: #151b24;
-  font-size: 30px;
+h1{
+font-size:clamp(32px,7vw,56px);
+line-height:1;
+margin:22px 0 16px
 }
-
-h1 {
-  margin: 25px 0 12px;
-  font-size: 28px;
-}
-
-p {
-  color: #9da7b6;
-  line-height: 1.7;
-}
-
-.status {
-  margin-top: 25px;
-  padding: 12px;
-  border-radius: 14px;
-  background: #111821;
-  color: #aeb8c7;
-}
-
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 7px;
-  border-radius: 50%;
-  background: #f5b83d;
+p{
+color:#9ca5b5;
+font-size:16px;
+line-height:1.7
 }
 </style>
 </head>
-
 <body>
-
 <div class="card">
-
-  <div class="logo">NEXUS</div>
-
-  <div class="icon">⚙</div>
-
-  <h1>
-    ${escapeHTML(
-      db.settings.maintenanceTitle
-    )}
-  </h1>
-
-  <p>
-    ${escapeHTML(
-      db.settings.maintenanceMessage
-    )}
-  </p>
-
-  <div class="status">
-    <span class="dot"></span>
-    Maintenance Mode
-  </div>
-
+<div class="logo">NEXUS</div>
+<div class="badge">● MAINTENANCE</div>
+<h1>${title}</h1>
+<p>${message}</p>
 </div>
-
 </body>
-</html>
-      `);
-    }
-
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "index.html"
-      )
-    );
-  }
-);
+</html>`;
+}
 
 /* =========================
-   START
+   STATIC APP
 ========================= */
+
+app.use(express.static(PUBLIC_DIR));
+
+app.get("*splat", (req, res) => {
+  const user = getUser(req);
+
+  if (
+    db.maintenance.locked &&
+    !isAdmin(user)
+  ) {
+    return res
+      .status(503)
+      .send(maintenancePage());
+  }
+
+  res.sendFile(
+    path.join(PUBLIC_DIR, "index.html")
+  );
+});
 
 app.listen(PORT, () => {
   console.log(
     `NEXUS running on port ${PORT}`
-  );
-
-const admin =
-  user &&
-  user.username.toLowerCase() === "calsgc";
-  );
   );
 });
