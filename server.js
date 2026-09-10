@@ -14,6 +14,32 @@ function cleanQuery(query) {
     .slice(0, 300);
 }
 
+/*
+|--------------------------------------------------------------------------
+| REMOVE HTML FROM WIKIPEDIA TEXT
+|--------------------------------------------------------------------------
+*/
+
+function stripHTML(value) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;/gi, "'")
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/*
+|--------------------------------------------------------------------------
+| SEARCH
+|--------------------------------------------------------------------------
+*/
+
 app.get("/api/search", async (req, res) => {
   const query = cleanQuery(req.query.q);
 
@@ -41,7 +67,9 @@ app.get("/api/search", async (req, res) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Search service returned ${response.status}`);
+      throw new Error(
+        `Search service returned ${response.status}`
+      );
     }
 
     const data = await response.json();
@@ -60,24 +88,38 @@ app.get("/api/search", async (req, res) => {
     }
 
     const results = pages.map(page => {
-      const title = page.title || "Untitled";
-      const key = page.key || title;
+      const title = stripHTML(
+        page.title || "Untitled"
+      );
+
+      const key =
+        page.key ||
+        page.title ||
+        "Untitled";
+
+      const description =
+        stripHTML(
+          page.description ||
+          "No description available."
+        );
+
+      const excerpt =
+        stripHTML(
+          page.excerpt ||
+          "No additional information available."
+        );
 
       return {
         title,
-        description:
-          page.description ||
-          "No description available.",
-        excerpt:
-          page.excerpt ||
-          "No additional information available.",
+        description,
+        excerpt,
         url:
           "https://en.wikipedia.org/wiki/" +
           encodeURIComponent(key)
       };
     });
 
-    res.json({
+    return res.json({
       ok: true,
       found: true,
       query,
@@ -86,22 +128,44 @@ app.get("/api/search", async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Search error:", error);
+    console.error(
+      "Search error:",
+      error
+    );
 
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
-      error: "NEXUS could not complete the search.",
+      error:
+        "NEXUS could not complete the search.",
       googleURL
     });
   }
 });
 
+/*
+|--------------------------------------------------------------------------
+| FRONTEND FALLBACK
+|--------------------------------------------------------------------------
+*/
+
 app.get("*splat", (req, res) => {
   res.sendFile(
-    path.join(__dirname, "public", "index.html")
+    path.join(
+      __dirname,
+      "public",
+      "index.html"
+    )
   );
 });
 
+/*
+|--------------------------------------------------------------------------
+| START
+|--------------------------------------------------------------------------
+*/
+
 app.listen(PORT, () => {
-  console.log(`NEXUS running on port ${PORT}`);
+  console.log(
+    `NEXUS running on port ${PORT}`
+  );
 });
