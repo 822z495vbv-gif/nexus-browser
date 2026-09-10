@@ -4,6 +4,36 @@ const fs = require("fs");
 const crypto = require("crypto");
 
 const app = express();
+
+const PORT = process.env.PORT || 3000;
+const ADMIN_USERNAME = "CALSGC";
+
+const PUBLIC_DIR = path.join(
+  __dirname,
+  "public"
+);
+
+const DATA_DIR = path.join(
+  __dirname,
+  "data"
+);
+
+const DB_FILE = path.join(
+  DATA_DIR,
+  "nexus.json"
+);
+
+fs.mkdirSync(
+  DATA_DIR,
+  { recursive: true }
+);
+
+const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
+
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 const ADMIN_USERNAME = "CALSGC";
