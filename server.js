@@ -1,6 +1,8 @@
+"use strict";
+
 const express = require("express");
-const path = require("path");
 const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
 
 const app = express();
@@ -9,172 +11,328 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, "data");
 const DB_FILE = path.join(DATA_DIR, "nexus.json");
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const ADMIN_USERNAME = "CALSGC";
+const SESSION_DAYS = 7;
 
-if (!fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify({
-    users: [],
-    sessions: []
-  }, null, 2));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function db() {
-  return JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+/* =========================
+   DATABASE
+========================= */
+
+function defaultDB() {
+  return {
+    users: [],
+    sessions: [],
+    settings: {
+      maintenance: false,
+      maintenanceTitle: "NEXUS is upgrading",
+      maintenanceMessage:
+        "We're making some improvements. We'll be back shortly."
+    }
+  };
+}
+
+function loadDB() {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      const fresh = defaultDB();
+      saveDB(fresh);
+      return fresh;
+    }
+
+    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const data = JSON.parse(raw);
+
+    data.users ||= [];
+    data.sessions ||= [];
+    data.settings ||= {};
+
+    data.settings.maintenance ??= false;
+    data.settings.maintenanceTitle ??= "NEXUS is upgrading";
+    data.settings.maintenanceMessage ??=
+      "We're making some improvements. We'll be back shortly.";
+
+    return data;
+  } catch (err) {
+    console.error("DATABASE ERROR:", err);
+
+    const fresh = defaultDB();
+    saveDB(fresh);
+
+    return fresh;
+  }
 }
 
 function saveDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(
+    DB_FILE,
+    JSON.stringify(data, null, 2),
+    "utf8"
+  );
 }
 
-function clean(value, max = 300) {
-  return String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+function clean(value) {
+  return String(value || "").trim();
 }
+
+/* =========================
+   HTML CLEANER
+========================= */
 
 function stripHTML(value) {
-  let text = String(value || "");
-
-  text = text.replace(/<[^>]*>/g, " ");
-
-  const entities = {
-    "&nbsp;": " ",
-    "&amp;": "&",
-    "&quot;": '"',
-    "&#039;": "'",
-    "&#39;": "'",
-    "&lt;": "<",
-    "&gt;": ">"
-  };
-
-  text = text.replace(
-    /&(?:nbsp|amp|quot|#039|#39|lt|gt);/gi,
-    match => entities[match.toLowerCase()] || match
-  );
-
-  text = text.replace(/&#(\d+);/g, (_, n) =>
-    String.fromCharCode(Number(n))
-  );
-
-  text = text.replace(/&#x([0-9a-f]+);/gi, (_, n) =>
-    String.fromCharCode(parseInt(n, 16))
-  );
-
-  text = text.replace(/<[^>]*>/g, " ");
-
-  return text.replace(/\s+/g, " ").trim();
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;/gi, "'")
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#(\d+);/g, (_, n) => {
+      try {
+        return String.fromCodePoint(Number(n));
+      } catch {
+        return "";
+      }
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => {
+      try {
+        return String.fromCodePoint(
+          parseInt(n, 16)
+        );
+      } catch {
+        return "";
+      }
+    })
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+/* =========================
+   PASSWORD SECURITY
+========================= */
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+
+  const hash = crypto.scryptSync(
+    password,
+    salt,
+    64
+  ).toString("hex");
+
   return `${salt}:${hash}`;
 }
 
 function checkPassword(password, stored) {
-  const [salt, original] = stored.split(":");
+  try {
+    const [salt, originalHash] =
+      String(stored).split(":");
 
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+    if (!salt || !originalHash) {
+      return false;
+    }
 
-  return crypto.timingSafeEqual(
-    Buffer.from(hash, "hex"),
-    Buffer.from(original, "hex")
-  );
+    const hash = crypto.scryptSync(
+      password,
+      salt,
+      64
+    );
+
+    const original =
+      Buffer.from(originalHash, "hex");
+
+    if (hash.length !== original.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(
+      hash,
+      original
+    );
+  } catch {
+    return false;
+  }
 }
 
-function createSession(userId) {
-  const data = db();
+/* =========================
+   SESSIONS
+========================= */
 
-  const token = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto
+function hashToken(token) {
+  return crypto
     .createHash("sha256")
     .update(token)
     .digest("hex");
+}
 
-  data.sessions = data.sessions.filter(
-    s => s.userId !== userId
-  );
+function createSession(userId) {
+  const db = loadDB();
 
-  data.sessions.push({
-    token: tokenHash,
+  const token =
+    crypto.randomBytes(32).toString("hex");
+
+  db.sessions.push({
+    token: hashToken(token),
     userId,
-    expires: Date.now() + 1000 * 60 * 60 * 24 * 7
+    expires:
+      Date.now() +
+      SESSION_DAYS * 24 * 60 * 60 * 1000
   });
 
-  saveDB(data);
+  db.sessions =
+    db.sessions.filter(
+      session =>
+        session.expires > Date.now()
+    );
+
+  saveDB(db);
 
   return token;
 }
 
-function getSession(req) {
-  const cookie = req.headers.cookie || "";
+function setSessionCookie(res, token) {
+  const secure =
+    process.env.NODE_ENV === "production"
+      ? "; Secure"
+      : "";
 
-  const match = cookie.match(/nexus_session=([^;]+)/);
-
-  if (!match) return null;
-
-  const tokenHash = crypto
-    .createHash("sha256")
-    .update(match[1])
-    .digest("hex");
-
-  const data = db();
-
-  const session = data.sessions.find(
-    s => s.token === tokenHash && s.expires > Date.now()
+  res.setHeader(
+    "Set-Cookie",
+    `nexus_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure}`
   );
+}
+
+function getCookie(req, name) {
+  const cookies =
+    req.headers.cookie || "";
+
+  const parts = cookies.split(";");
+
+  for (const part of parts) {
+    const [key, ...value] =
+      part.trim().split("=");
+
+    if (key === name) {
+      return decodeURIComponent(
+        value.join("=")
+      );
+    }
+  }
+
+  return null;
+}
+
+function getUser(req) {
+  const token =
+    getCookie(req, "nexus_session");
+
+  if (!token) return null;
+
+  const db = loadDB();
+
+  const session =
+    db.sessions.find(
+      s =>
+        s.token === hashToken(token) &&
+        s.expires > Date.now()
+    );
 
   if (!session) return null;
 
-  const user = data.users.find(
-    u => u.id === session.userId
-  );
-
-  return user || null;
-}
-
-function setSessionCookie(res, token) {
-  res.setHeader(
-    "Set-Cookie",
-    `nexus_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=604800`
+  return (
+    db.users.find(
+      user => user.id === session.userId
+    ) || null
   );
 }
 
-function clearSessionCookie(res) {
-  res.setHeader(
-    "Set-Cookie",
-    "nexus_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
+function requireAuth(req, res, next) {
+  const user = getUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      ok: false,
+      error: "You are not signed in."
+    });
+  }
+
+  req.user = user;
+  next();
+}
+
+function isAdmin(user) {
+  return (
+    user &&
+    user.username.toLowerCase() ===
+      ADMIN_USERNAME.toLowerCase()
   );
 }
 
-app.use(express.json({ limit: "100kb" }));
-app.use(express.static(path.join(__dirname, "public")));
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req.user)) {
+    return res.status(403).json({
+      ok: false,
+      error: "Administrator access required."
+    });
+  }
+
+  next();
+}
+
+/* =========================
+   REGISTER
+========================= */
 
 app.post("/api/register", (req, res) => {
-  const username = clean(req.body.username, 30);
-  const password = String(req.body.password || "");
+  const username = clean(req.body.username);
+  const password =
+    String(req.body.password || "");
 
-  if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(username)) {
+  if (!username || !password) {
     return res.status(400).json({
       ok: false,
-      error: "Username must be 3–30 characters."
+      error: "Username and password are required."
+    });
+  }
+
+  if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) {
+    return res.status(400).json({
+      ok: false,
+      error:
+        "Username must be 3-24 characters and use letters, numbers, dots, hyphens or underscores."
     });
   }
 
   if (password.length < 8) {
     return res.status(400).json({
       ok: false,
-      error: "Password must be at least 8 characters."
+      error:
+        "Password must be at least 8 characters."
     });
   }
 
-  const data = db();
+  const db = loadDB();
 
-  if (
-    data.users.some(
-      u => u.username.toLowerCase() === username.toLowerCase()
-    )
-  ) {
+  const exists =
+    db.users.some(
+      user =>
+        user.username.toLowerCase() ===
+        username.toLowerCase()
+    );
+
+  if (exists) {
     return res.status(409).json({
       ok: false,
-      error: "That username is already taken."
+      error: "That username already exists."
     });
   }
 
@@ -184,266 +342,658 @@ app.post("/api/register", (req, res) => {
     password: hashPassword(password),
     history: [],
     saved: [],
-    created: Date.now()
+    createdAt: Date.now()
   };
 
-  data.users.push(user);
-  saveDB(data);
+  db.users.push(user);
 
-  const token = createSession(user.id);
+  saveDB(db);
+
+  const token =
+    createSession(user.id);
+
   setSessionCookie(res, token);
 
   res.json({
     ok: true,
     user: {
       id: user.id,
-      username: user.username
+      username: user.username,
+      admin: isAdmin(user)
     }
   });
 });
+
+/* =========================
+   LOGIN
+========================= */
 
 app.post("/api/login", (req, res) => {
-  const username = clean(req.body.username, 30);
-  const password = String(req.body.password || "");
+  const username = clean(req.body.username);
+  const password =
+    String(req.body.password || "");
 
-  const data = db();
-
-  const user = data.users.find(
-    u => u.username.toLowerCase() === username.toLowerCase()
-  );
-
-  if (!user || !checkPassword(password, user.password)) {
-    return res.status(401).json({
+  if (!username || !password) {
+    return res.status(400).json({
       ok: false,
-      error: "Incorrect username or password."
+      error:
+        "Enter your username and password."
     });
   }
 
-  const token = createSession(user.id);
+  const db = loadDB();
+
+  const user =
+    db.users.find(
+      u =>
+        u.username.toLowerCase() ===
+        username.toLowerCase()
+    );
+
+  if (!user || !checkPassword(
+    password,
+    user.password
+  )) {
+    return res.status(401).json({
+      ok: false,
+      error:
+        "Incorrect username or password."
+    });
+  }
+
+  const token =
+    createSession(user.id);
+
   setSessionCookie(res, token);
 
   res.json({
     ok: true,
     user: {
       id: user.id,
-      username: user.username
+      username: user.username,
+      admin: isAdmin(user)
     }
   });
 });
 
+/* =========================
+   LOGOUT
+========================= */
+
 app.post("/api/logout", (req, res) => {
-  const cookie = req.headers.cookie || "";
-  const match = cookie.match(/nexus_session=([^;]+)/);
+  const token =
+    getCookie(req, "nexus_session");
 
-  if (match) {
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(match[1])
-      .digest("hex");
+  if (token) {
+    const db = loadDB();
 
-    const data = db();
+    db.sessions =
+      db.sessions.filter(
+        session =>
+          session.token !==
+          hashToken(token)
+      );
 
-    data.sessions = data.sessions.filter(
-      s => s.token !== tokenHash
-    );
-
-    saveDB(data);
+    saveDB(db);
   }
 
-  clearSessionCookie(res);
+  res.setHeader(
+    "Set-Cookie",
+    "nexus_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
+  );
 
   res.json({ ok: true });
 });
 
+/* =========================
+   CURRENT USER
+========================= */
+
 app.get("/api/me", (req, res) => {
-  const user = getSession(req);
+  const user = getUser(req);
 
   if (!user) {
-    return res.status(401).json({ ok: false });
+    return res.status(401).json({
+      ok: false
+    });
   }
+
+  const db = loadDB();
 
   res.json({
     ok: true,
+
     user: {
       id: user.id,
-      username: user.username
+      username: user.username,
+      admin: isAdmin(user)
     },
+
     history: user.history || [],
-    saved: user.saved || []
+    saved: user.saved || [],
+
+    maintenance: isAdmin(user)
+      ? db.settings.maintenance
+      : undefined
   });
 });
 
-app.post("/api/history", (req, res) => {
-  const user = getSession(req);
+/* =========================
+   HISTORY
+========================= */
 
-  if (!user) {
-    return res.status(401).json({ ok: false });
-  }
+app.post(
+  "/api/history",
+  requireAuth,
+  (req, res) => {
 
-  const query = clean(req.body.query, 300);
-  if (!query) return res.status(400).json({ ok: false });
+    const query =
+      clean(req.body.query);
 
-  const data = db();
-  const target = data.users.find(u => u.id === user.id);
-
-  target.history = [
-    {
-      query,
-      time: Date.now()
-    },
-    ...(target.history || []).filter(
-      x => x.query.toLowerCase() !== query.toLowerCase()
-    )
-  ].slice(0, 50);
-
-  saveDB(data);
-
-  res.json({ ok: true });
-});
-
-app.delete("/api/history", (req, res) => {
-  const user = getSession(req);
-
-  if (!user) {
-    return res.status(401).json({ ok: false });
-  }
-
-  const data = db();
-  const target = data.users.find(u => u.id === user.id);
-
-  target.history = [];
-
-  saveDB(data);
-
-  res.json({ ok: true });
-});
-
-app.post("/api/saved", (req, res) => {
-  const user = getSession(req);
-
-  if (!user) {
-    return res.status(401).json({ ok: false });
-  }
-
-  const item = {
-    title: clean(req.body.title, 300),
-    url: String(req.body.url || "").slice(0, 1000),
-    description: clean(req.body.description, 500)
-  };
-
-  if (!item.title || !item.url.startsWith("http")) {
-    return res.status(400).json({ ok: false });
-  }
-
-  const data = db();
-  const target = data.users.find(u => u.id === user.id);
-
-  target.saved = [
-    item,
-    ...(target.saved || []).filter(x => x.url !== item.url)
-  ].slice(0, 100);
-
-  saveDB(data);
-
-  res.json({ ok: true });
-});
-
-app.delete("/api/saved", (req, res) => {
-  const user = getSession(req);
-
-  if (!user) {
-    return res.status(401).json({ ok: false });
-  }
-
-  const data = db();
-  const target = data.users.find(u => u.id === user.id);
-
-  target.saved = [];
-
-  saveDB(data);
-
-  res.json({ ok: true });
-});
-
-app.get("/api/search", async (req, res) => {
-  const query = clean(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      ok: false,
-      error: "Please enter a search query."
-    });
-  }
-
-  const googleURL =
-    "https://www.google.com/search?q=" +
-    encodeURIComponent(query);
-
-  try {
-    const url =
-      "https://en.wikipedia.org/w/rest.php/v1/search/page?q=" +
-      encodeURIComponent(query) +
-      "&limit=8";
-
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "NEXUS-Search/2.0"
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Wikipedia returned ${response.status}`);
+    if (!query) {
+      return res.status(400).json({
+        ok: false
+      });
     }
 
-    const data = await response.json();
+    const db = loadDB();
 
-    const pages = Array.isArray(data.pages)
-      ? data.pages
-      : [];
+    const user =
+      db.users.find(
+        u => u.id === req.user.id
+      );
 
-    const results = pages.map(page => {
-      const title = stripHTML(page.title || "Untitled");
-      const key = page.key || title;
+    user.history =
+      user.history || [];
 
-      return {
-        title,
-        description: stripHTML(
-          page.description || "No description available."
-        ),
-        excerpt: stripHTML(
-          page.excerpt || "No additional information available."
-        ),
-        url:
-          "https://en.wikipedia.org/wiki/" +
-          encodeURIComponent(key)
-      };
+    user.history = [
+      {
+        query,
+        time: Date.now()
+      },
+      ...user.history.filter(
+        item =>
+          item.query.toLowerCase() !==
+          query.toLowerCase()
+      )
+    ].slice(0, 100);
+
+    saveDB(db);
+
+    res.json({
+      ok: true
     });
+  }
+);
+
+app.delete(
+  "/api/history",
+  requireAuth,
+  (req, res) => {
+
+    const db = loadDB();
+
+    const user =
+      db.users.find(
+        u => u.id === req.user.id
+      );
+
+    user.history = [];
+
+    saveDB(db);
+
+    res.json({
+      ok: true
+    });
+  }
+);
+
+/* =========================
+   SAVED
+========================= */
+
+app.post(
+  "/api/saved",
+  requireAuth,
+  (req, res) => {
+
+    const db = loadDB();
+
+    const user =
+      db.users.find(
+        u => u.id === req.user.id
+      );
+
+    user.saved =
+      user.saved || [];
+
+    const item = {
+      title: clean(req.body.title),
+      url: clean(req.body.url),
+      description:
+        clean(req.body.description),
+      excerpt:
+        clean(req.body.excerpt),
+      time: Date.now()
+    };
+
+    if (!item.title || !item.url) {
+      return res.status(400).json({
+        ok: false
+      });
+    }
+
+    user.saved.unshift(item);
+
+    user.saved =
+      user.saved.slice(0, 100);
+
+    saveDB(db);
+
+    res.json({
+      ok: true
+    });
+  }
+);
+
+app.delete(
+  "/api/saved",
+  requireAuth,
+  (req, res) => {
+
+    const db = loadDB();
+
+    const user =
+      db.users.find(
+        u => u.id === req.user.id
+      );
+
+    user.saved = [];
+
+    saveDB(db);
+
+    res.json({
+      ok: true
+    });
+  }
+);
+
+/* =========================
+   MAINTENANCE CHECK
+========================= */
+
+app.get(
+  "/api/system",
+  (req, res) => {
+
+    const db = loadDB();
 
     res.json({
       ok: true,
-      found: results.length > 0,
-      query,
-      results,
-      googleURL
-    });
-
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      ok: false,
-      error: "NEXUS could not complete the search.",
-      googleURL
+      maintenance:
+        db.settings.maintenance,
+      title:
+        db.settings.maintenanceTitle,
+      message:
+        db.settings.maintenanceMessage
     });
   }
-});
+);
 
-app.get("*splat", (req, res) => {
-  res.sendFile(
-    path.join(__dirname, "public", "index.html")
-  );
-});
+/* =========================
+   ADMIN STATUS
+========================= */
+
+app.get(
+  "/api/admin/status",
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+
+    const db = loadDB();
+
+    res.json({
+      ok: true,
+
+      maintenance:
+        db.settings.maintenance,
+
+      title:
+        db.settings.maintenanceTitle,
+
+      message:
+        db.settings.maintenanceMessage,
+
+      users:
+        db.users.length,
+
+      sessions:
+        db.sessions.length
+    });
+  }
+);
+
+/* =========================
+   ADMIN LOCK
+========================= */
+
+app.post(
+  "/api/admin/lock",
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+
+    const db = loadDB();
+
+    db.settings.maintenance = true;
+
+    if (req.body.title) {
+      db.settings.maintenanceTitle =
+        clean(req.body.title);
+    }
+
+    if (req.body.message) {
+      db.settings.maintenanceMessage =
+        clean(req.body.message);
+    }
+
+    saveDB(db);
+
+    res.json({
+      ok: true,
+      maintenance: true
+    });
+  }
+);
+
+/* =========================
+   ADMIN UNLOCK
+========================= */
+
+app.post(
+  "/api/admin/unlock",
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+
+    const db = loadDB();
+
+    db.settings.maintenance = false;
+
+    saveDB(db);
+
+    res.json({
+      ok: true,
+      maintenance: false
+    });
+  }
+);
+
+/* =========================
+   ADMIN INFO
+========================= */
+
+app.get(
+  "/api/admin/users",
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+
+    const db = loadDB();
+
+    res.json({
+      ok: true,
+
+      users: db.users.map(user => ({
+        id: user.id,
+        username: user.username,
+        createdAt: user.createdAt,
+        historyCount:
+          (user.history || []).length,
+        savedCount:
+          (user.saved || []).length
+      }))
+    });
+  }
+);
+
+/* =========================
+   SEARCH
+========================= */
+
+app.get(
+  "/api/search",
+  async (req, res) => {
+
+    const query =
+      clean(req.query.q);
+
+    if (!query) {
+      return res.status(400).json({
+        ok: false,
+        error: "Enter something to search."
+      });
+    }
+
+    try {
+
+      const url =
+        `https://en.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=10`;
+
+      const response =
+        await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(
+          "Wikipedia search failed."
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const results =
+        (data.pages || []).map(page => ({
+          title:
+            stripHTML(page.title),
+
+          description:
+            stripHTML(page.description),
+
+          excerpt:
+            stripHTML(page.excerpt),
+
+          url:
+            page.content_urls?.desktop?.page ||
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(page.key || page.title)}`
+        }));
+
+      res.json({
+        ok: true,
+        query,
+        found: results.length > 0,
+        results,
+
+        googleURL:
+          `https://www.google.com/search?q=${encodeURIComponent(query)}`
+      });
+
+    } catch (error) {
+
+      console.error(
+        "SEARCH ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "NEXUS search is temporarily unavailable."
+      });
+    }
+  }
+);
+
+/* =========================
+   WEBSITE LOCK
+========================= */
+
+app.get(
+  "*splat",
+  (req, res) => {
+
+    const user = getUser(req);
+    const db = loadDB();
+
+    const allowedAdmin =
+      isAdmin(user);
+
+    if (
+      db.settings.maintenance &&
+      !allowedAdmin &&
+      !req.path.startsWith("/api/")
+    ) {
+
+      return res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+<title>NEXUS — Maintenance</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #07090d;
+  color: white;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.card {
+  width: min(520px, 90%);
+  padding: 42px;
+  border: 1px solid #202631;
+  border-radius: 28px;
+  background: #0d1118;
+  text-align: center;
+  box-shadow:
+    0 30px 80px rgba(0,0,0,.45);
+}
+
+.logo {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  margin-bottom: 35px;
+}
+
+.icon {
+  width: 70px;
+  height: 70px;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: #151b24;
+  font-size: 30px;
+}
+
+h1 {
+  margin: 25px 0 12px;
+  font-size: 28px;
+}
+
+p {
+  color: #9da7b6;
+  line-height: 1.7;
+}
+
+.status {
+  margin-top: 25px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #111821;
+  color: #aeb8c7;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #f5b83d;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+  <div class="logo">NEXUS</div>
+
+  <div class="icon">⚙</div>
+
+  <h1>
+    ${escapeHTML(
+      db.settings.maintenanceTitle
+    )}
+  </h1>
+
+  <p>
+    ${escapeHTML(
+      db.settings.maintenanceMessage
+    )}
+  </p>
+
+  <div class="status">
+    <span class="dot"></span>
+    Maintenance Mode
+  </div>
+
+</div>
+
+</body>
+</html>
+      `);
+    }
+
+    res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "index.html"
+      )
+    );
+  }
+);
+
+/* =========================
+   START
+========================= */
 
 app.listen(PORT, () => {
-  console.log(`NEXUS running on port ${PORT}`);
+  console.log(
+    `NEXUS running on port ${PORT}`
+  );
+
+  console.log(
+    `ADMIN ACCOUNT: ${CALSGC}`
+  );
 });
