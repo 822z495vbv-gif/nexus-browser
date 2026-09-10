@@ -1,280 +1,231 @@
-const searchForm = document.getElementById("searchForm");
-const searchInput = document.getElementById("searchInput");
-const searchButton = document.getElementById("searchButton");
-const searchButtonText = document.getElementById("searchButtonText");
-const spinner = document.getElementById("spinner");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
 
-const resultsSection = document.getElementById("resultsSection");
-const resultsTitle = document.getElementById("resultsTitle");
-const results = document.getElementById("results");
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
-const answerBox = document.getElementById("answerBox");
+  <title>NEXUS — Search</title>
 
-const googleFallback = document.getElementById("googleFallback");
-const googleLink = document.getElementById("googleLink");
+  <link rel="stylesheet" href="/style.css">
+</head>
 
-const historySection = document.getElementById("historySection");
-const historyContainer = document.getElementById("history");
+<body>
 
-const clearButton = document.getElementById("clearButton");
-const themeButton = document.getElementById("themeButton");
+  <div class="background"></div>
 
-const quickButtons =
-  document.querySelectorAll(".quick-searches button");
+  <header class="topbar">
 
-let history = JSON.parse(
-  localStorage.getItem("nexus-history") || "[]"
-);
+    <div class="brand">
 
-function setLoading(loading) {
-  searchButton.disabled = loading;
+      <div class="brand-icon">
+        N
+      </div>
 
-  if (loading) {
-    searchButtonText.classList.add("hidden");
-    spinner.classList.remove("hidden");
-  } else {
-    searchButtonText.classList.remove("hidden");
-    spinner.classList.add("hidden");
-  }
-}
+      <div>
+        <div class="brand-name">
+          NEXUS
+        </div>
 
-function escapeHTML(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+        <div class="brand-subtitle">
+          SEARCH INTELLIGENCE
+        </div>
+      </div>
 
-function saveHistory(query) {
-  history = [
-    query,
-    ...history.filter(item => item !== query)
-  ].slice(0, 10);
-
-  localStorage.setItem(
-    "nexus-history",
-    JSON.stringify(history)
-  );
-
-  renderHistory();
-}
-
-function renderHistory() {
-  if (!history.length) {
-    historySection.classList.add("hidden");
-    return;
-  }
-
-  historySection.classList.remove("hidden");
-
-  historyContainer.innerHTML = history
-    .map(query => `
-      <button
-        class="history-item"
-        data-history="${escapeHTML(query)}"
-      >
-        ${escapeHTML(query)}
-      </button>
-    `)
-    .join("");
-
-  document
-    .querySelectorAll(".history-item")
-    .forEach(button => {
-      button.addEventListener("click", () => {
-        searchInput.value =
-          button.dataset.history;
-
-        searchForm.requestSubmit();
-      });
-    });
-}
-
-function showError(message, googleURL) {
-  resultsSection.classList.remove("hidden");
-
-  resultsTitle.textContent = "Something went wrong";
-
-  answerBox.classList.remove("hidden");
-
-  answerBox.innerHTML = `
-    <div class="answer-label">NEXUS ERROR</div>
-    <h3>Search unavailable</h3>
-    <p>${escapeHTML(message)}</p>
-  `;
-
-  results.innerHTML = "";
-
-  if (googleURL) {
-    googleFallback.classList.remove("hidden");
-    googleLink.href = googleURL;
-  }
-}
-
-async function search(query) {
-  query = query.trim();
-
-  if (!query) {
-    searchInput.focus();
-    return;
-  }
-
-  setLoading(true);
-
-  resultsSection.classList.remove("hidden");
-
-  resultsTitle.textContent = query;
-
-  answerBox.classList.add("hidden");
-  googleFallback.classList.add("hidden");
-
-  results.innerHTML = `
-    <div class="answer-box">
-      <div class="answer-label">NEXUS</div>
-      <h3>Searching...</h3>
-      <p>Finding relevant information.</p>
     </div>
-  `;
 
-  saveHistory(query);
+    <button
+      id="themeButton"
+      class="icon-button"
+      aria-label="Toggle theme"
+    >
+      ☼
+    </button>
 
-  try {
-    const response = await fetch(
-      `/api/search?q=${encodeURIComponent(query)}`
-    );
+  </header>
 
-    const data = await response.json();
+  <main>
 
-    if (!response.ok || !data.ok) {
-      throw new Error(
-        data.error || "Search failed."
-      );
-    }
+    <section class="hero">
 
-    results.innerHTML = "";
+      <div class="status">
+        <span class="status-dot"></span>
+        NEXUS ONLINE
+      </div>
 
-    if (data.found && data.results.length) {
+      <h1>
+        Search the
+        <span>world.</span>
+      </h1>
 
-      const first = data.results[0];
+      <p class="hero-text">
+        Ask a question, find information,
+        or search the web.
+      </p>
 
-      answerBox.classList.remove("hidden");
+      <form
+        id="searchForm"
+        class="search-box"
+      >
 
-      answerBox.innerHTML = `
-        <div class="answer-label">QUICK ANSWER</div>
-        <h3>${escapeHTML(first.title)}</h3>
-        <p>
-          ${escapeHTML(first.excerpt)}
-        </p>
-      `;
+        <span class="search-icon">
+          ⌕
+        </span>
 
-      data.results.forEach(item => {
+        <input
+          id="searchInput"
+          type="text"
+          autocomplete="off"
+          placeholder="Ask NEXUS anything..."
+          maxlength="300"
+        >
 
-        const card = document.createElement("a");
+        <button
+          type="submit"
+          id="searchButton"
+        >
 
-        card.className = "result-card";
-
-        card.href = item.url;
-
-        card.target = "_blank";
-
-        card.rel = "noopener noreferrer";
-
-        card.innerHTML = `
-          <h3>${escapeHTML(item.title)}</h3>
-
-          <div class="description">
-            ${escapeHTML(item.description)}
-          </div>
-
-          <div class="excerpt">
-            ${escapeHTML(item.excerpt)}
-          </div>
-
-          <span class="result-url">
-            ${escapeHTML(item.url)}
+          <span id="searchButtonText">
+            Search
           </span>
-        `;
 
-        results.appendChild(card);
-      });
+          <span
+            id="spinner"
+            class="spinner hidden"
+          ></span>
 
-      googleFallback.classList.remove("hidden");
-      googleLink.href = data.googleURL;
+        </button>
 
-    } else {
+      </form>
 
-      answerBox.classList.remove("hidden");
+      <div class="quick-searches">
 
-      answerBox.innerHTML = `
-        <div class="answer-label">NEXUS</div>
-        <h3>No direct answer found</h3>
-        <p>
-          NEXUS couldn't find a useful result in its
-          current knowledge source.
-        </p>
-      `;
+        <button
+          type="button"
+          data-query="What is JavaScript?"
+        >
+          JavaScript
+        </button>
 
-      googleFallback.classList.remove("hidden");
+        <button
+          type="button"
+          data-query="What is artificial intelligence?"
+        >
+          AI
+        </button>
 
-      googleLink.href = data.googleURL;
-    }
+        <button
+          type="button"
+          data-query="What is photosynthesis?"
+        >
+          Science
+        </button>
 
-  } catch (error) {
+        <button
+          type="button"
+          data-query="Who was Albert Einstein?"
+        >
+          History
+        </button>
 
-    console.error(error);
+      </div>
 
-    showError(
-      error.message ||
-      "An unexpected error occurred.",
-      `https://www.google.com/search?q=${encodeURIComponent(query)}`
-    );
+    </section>
 
-  } finally {
-    setLoading(false);
-  }
-}
+    <section
+      id="resultsSection"
+      class="results-section hidden"
+    >
 
-searchForm.addEventListener("submit", event => {
-  event.preventDefault();
+      <div class="results-header">
 
-  search(searchInput.value);
-});
+        <div>
 
-quickButtons.forEach(button => {
-  button.addEventListener("click", () => {
-    searchInput.value = button.dataset.query;
+          <div class="results-label">
+            SEARCH RESULTS
+          </div>
 
-    searchForm.requestSubmit();
-  });
-});
+          <h2 id="resultsTitle"></h2>
 
-clearButton.addEventListener("click", () => {
-  resultsSection.classList.add("hidden");
+        </div>
 
-  answerBox.classList.add("hidden");
+        <button
+          id="clearButton"
+          class="clear-button"
+          type="button"
+        >
+          Clear
+        </button>
 
-  results.innerHTML = "";
+      </div>
 
-  searchInput.focus();
-});
+      <div
+        id="answerBox"
+        class="answer-box hidden"
+      ></div>
 
-themeButton.addEventListener("click", () => {
-  document.body.classList.toggle("light");
+      <div id="results"></div>
 
-  localStorage.setItem(
-    "nexus-theme",
-    document.body.classList.contains("light")
-      ? "light"
-      : "dark"
-  );
-});
+      <div
+        id="googleFallback"
+        class="google-box hidden"
+      >
 
-if (localStorage.getItem("nexus-theme") === "light") {
-  document.body.classList.add("light");
-}
+        <div>
 
-renderHistory();
+          <strong>
+            Didn't find what you're looking for?
+          </strong>
 
-searchInput.focus();
+          <p>
+            Search the wider web using Google.
+          </p>
+
+        </div>
+
+        <a
+          id="googleLink"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Search Google →
+        </a>
+
+      </div>
+
+    </section>
+
+    <section
+      id="historySection"
+      class="history-section hidden"
+    >
+
+      <div class="results-label">
+        RECENT SEARCHES
+      </div>
+
+      <div id="history"></div>
+
+    </section>
+
+  </main>
+
+  <footer>
+
+    <span>NEXUS</span>
+
+    <span>•</span>
+
+    <span>
+      Built with JavaScript
+    </span>
+
+  </footer>
+
+  <script src="/app.js"></script>
+
+</body>
+</html>
