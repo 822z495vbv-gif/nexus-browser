@@ -8,153 +8,616 @@
     content="width=device-width, initial-scale=1.0"
   >
 
-  <title>NEXUS — Search</title>
+  <meta
+    name="theme-color"
+    content="#07080c"
+  >
+
+  <title>NEXUS — Intelligence Search</title>
 
   <link rel="stylesheet" href="/style.css">
 </head>
 
 <body>
 
-  <div class="background"></div>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
 
-  <header class="topbar">
+  <!-- SIDEBAR -->
 
-    <div class="brand">
+  <aside id="sidebar" class="sidebar">
 
-      <div class="brand-icon">
-        N
+    <div class="sidebar-top">
+
+      <div class="brand">
+        <div class="brand-mark">N</div>
+
+        <div>
+          <div class="brand-name">NEXUS</div>
+          <div class="brand-caption">INTELLIGENCE</div>
+        </div>
       </div>
 
-      <div>
-        <div class="brand-name">
-          NEXUS
+      <button
+        id="closeSidebar"
+        class="mobile-close"
+        type="button"
+      >
+        ×
+      </button>
+
+    </div>
+
+    <nav class="nav">
+
+      <div class="nav-label">WORKSPACE</div>
+
+      <button
+        class="nav-item active"
+        data-section="search"
+        type="button"
+      >
+        <span>⌕</span>
+        Search
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="history"
+        type="button"
+      >
+        <span>◷</span>
+        History
+      </button>
+
+      <button
+        class="nav-item"
+        data-section="saved"
+        type="button"
+      >
+        <span>☆</span>
+        Saved
+      </button>
+
+      <div class="nav-label nav-space">SYSTEM</div>
+
+      <button
+        class="nav-item"
+        id="settingsButton"
+        type="button"
+      >
+        <span>⚙</span>
+        Settings
+      </button>
+
+    </nav>
+
+    <div class="sidebar-bottom">
+
+      <div class="plan-card">
+
+        <div class="plan-icon">✦</div>
+
+        <div>
+          <strong>NEXUS Core</strong>
+          <p>Personal workspace</p>
         </div>
 
-        <div class="brand-subtitle">
-          SEARCH INTELLIGENCE
+      </div>
+
+      <button
+        id="profileButton"
+        class="profile-button"
+        type="button"
+      >
+
+        <div
+          id="profileAvatar"
+          class="avatar"
+        >
+          G
         </div>
+
+        <div class="profile-text">
+          <strong id="profileName">
+            Guest
+          </strong>
+
+          <span id="profileEmail">
+            Local profile
+          </span>
+        </div>
+
+        <span class="profile-arrow">›</span>
+
+      </button>
+
+    </div>
+
+  </aside>
+
+  <div
+    id="sidebarOverlay"
+    class="sidebar-overlay"
+  ></div>
+
+  <!-- MAIN -->
+
+  <div class="app">
+
+    <header class="topbar">
+
+      <button
+        id="menuButton"
+        class="menu-button"
+        type="button"
+        aria-label="Open menu"
+      >
+        ☰
+      </button>
+
+      <div class="topbar-context">
+
+        <span class="online-dot"></span>
+
+        <span>NEXUS ONLINE</span>
+
+      </div>
+
+      <div class="topbar-actions">
+
+        <button
+          id="themeButton"
+          class="top-icon"
+          type="button"
+          aria-label="Toggle theme"
+        >
+          ☼
+        </button>
+
+        <button
+          id="topProfileButton"
+          class="mini-profile"
+          type="button"
+        >
+          G
+        </button>
+
+      </div>
+
+    </header>
+
+    <main>
+
+      <!-- SEARCH VIEW -->
+
+      <section
+        id="searchView"
+        class="view active-view"
+      >
+
+        <div class="hero">
+
+          <div class="hero-badge">
+            <span>✦</span>
+            INTELLIGENCE SEARCH
+          </div>
+
+          <h1>
+            Ask anything.
+            <span>Find everything.</span>
+          </h1>
+
+          <p class="hero-description">
+            Search information, explore ideas,
+            and discover what's next.
+          </p>
+
+          <form
+            id="searchForm"
+            class="search-container"
+          >
+
+            <div class="search-glow"></div>
+
+            <div class="search-inner">
+
+              <span class="search-symbol">
+                ⌕
+              </span>
+
+              <input
+                id="searchInput"
+                type="text"
+                placeholder="Ask NEXUS anything..."
+                autocomplete="off"
+                maxlength="300"
+              >
+
+              <button
+                id="clearInput"
+                class="clear-input hidden"
+                type="button"
+              >
+                ×
+              </button>
+
+              <button
+                id="searchButton"
+                type="submit"
+              >
+                <span id="searchButtonText">
+                  Search
+                </span>
+
+                <span
+                  id="spinner"
+                  class="spinner hidden"
+                ></span>
+              </button>
+
+            </div>
+
+            <div class="search-hint">
+
+              <span>
+                Press
+                <kbd>Enter</kbd>
+                to search
+              </span>
+
+              <span class="secure-search">
+                <span>●</span>
+                Secure search
+              </span>
+
+            </div>
+
+          </form>
+
+          <div class="suggestions">
+
+            <button
+              type="button"
+              data-query="What is artificial intelligence?"
+            >
+              <span>✦</span>
+              Artificial Intelligence
+            </button>
+
+            <button
+              type="button"
+              data-query="What is JavaScript?"
+            >
+              <span>⌘</span>
+              JavaScript
+            </button>
+
+            <button
+              type="button"
+              data-query="How does the internet work?"
+            >
+              <span>◉</span>
+              The Internet
+            </button>
+
+            <button
+              type="button"
+              data-query="Who was Albert Einstein?"
+            >
+              <span>◇</span>
+              History
+            </button>
+
+          </div>
+
+        </div>
+
+        <!-- RESULTS -->
+
+        <section
+          id="resultsSection"
+          class="results-section hidden"
+        >
+
+          <div class="results-toolbar">
+
+            <div>
+
+              <div class="eyebrow">
+                NEXUS RESULTS
+              </div>
+
+              <h2 id="resultsTitle">
+                Search
+              </h2>
+
+            </div>
+
+            <button
+              id="clearButton"
+              class="secondary-button"
+              type="button"
+            >
+              Clear
+            </button>
+
+          </div>
+
+          <div
+            id="answerBox"
+            class="ai-card hidden"
+          ></div>
+
+          <div
+            id="results"
+            class="result-list"
+          ></div>
+
+          <div
+            id="googleFallback"
+            class="fallback-card hidden"
+          >
+
+            <div class="fallback-icon">
+              G
+            </div>
+
+            <div class="fallback-copy">
+
+              <strong>
+                Explore the wider web
+              </strong>
+
+              <p>
+                NEXUS couldn't find everything
+                in its current sources.
+              </p>
+
+            </div>
+
+            <a
+              id="googleLink"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Search web →
+            </a>
+
+          </div>
+
+        </section>
+
+      </section>
+
+      <!-- HISTORY VIEW -->
+
+      <section
+        id="historyView"
+        class="view hidden"
+      >
+
+        <div class="page-heading">
+
+          <div class="eyebrow">
+            WORKSPACE
+          </div>
+
+          <h2>Search history</h2>
+
+          <p>
+            Your recent searches stay on this device.
+          </p>
+
+        </div>
+
+        <div
+          id="fullHistory"
+          class="history-grid"
+        ></div>
+
+      </section>
+
+      <!-- SAVED VIEW -->
+
+      <section
+        id="savedView"
+        class="view hidden"
+      >
+
+        <div class="page-heading">
+
+          <div class="eyebrow">
+            WORKSPACE
+          </div>
+
+          <h2>Saved searches</h2>
+
+          <p>
+            Keep useful searches close.
+          </p>
+
+        </div>
+
+        <div
+          id="savedContainer"
+          class="empty-workspace"
+        >
+
+          <div class="empty-icon">
+            ☆
+          </div>
+
+          <h3>No saved searches</h3>
+
+          <p>
+            Save searches here when you find
+            something worth keeping.
+          </p>
+
+        </div>
+
+      </section>
+
+    </main>
+
+    <footer>
+
+      <span class="footer-brand">
+        NEXUS
+      </span>
+
+      <span>·</span>
+
+      <span>
+        Intelligence Search
+      </span>
+
+      <span>·</span>
+
+      <span>
+        v1.0
+      </span>
+
+    </footer>
+
+  </div>
+
+  <!-- PROFILE MODAL -->
+
+  <div
+    id="profileModal"
+    class="modal hidden"
+  >
+
+    <div class="modal-backdrop"></div>
+
+    <div class="modal-card">
+
+      <button
+        class="modal-close"
+        data-close-modal
+        type="button"
+      >
+        ×
+      </button>
+
+      <div class="modal-header">
+
+        <div class="modal-avatar">
+          G
+        </div>
+
+        <div>
+
+          <div class="eyebrow">
+            PROFILE
+          </div>
+
+          <h2>Your NEXUS profile</h2>
+
+        </div>
+
+      </div>
+
+      <div class="form-group">
+
+        <label for="profileInput">
+          Display name
+        </label>
+
+        <input
+          id="profileInput"
+          type="text"
+          maxlength="30"
+          placeholder="Enter your name"
+        >
+
+      </div>
+
+      <button
+        id="saveProfile"
+        class="primary-button"
+        type="button"
+      >
+        Save profile
+      </button>
+
+      <div class="local-note">
+        <span>ⓘ</span>
+        This profile is currently stored locally
+        on this device. Full accounts will be added
+        with the NEXUS backend.
       </div>
 
     </div>
 
-    <button
-      id="themeButton"
-      class="icon-button"
-      aria-label="Toggle theme"
-    >
-      ☼
-    </button>
+  </div>
 
-  </header>
+  <!-- SETTINGS MODAL -->
 
-  <main>
+  <div
+    id="settingsModal"
+    class="modal hidden"
+  >
 
-    <section class="hero">
+    <div class="modal-backdrop"></div>
 
-      <div class="status">
-        <span class="status-dot"></span>
-        NEXUS ONLINE
-      </div>
+    <div class="modal-card settings-card">
 
-      <h1>
-        Search the
-        <span>world.</span>
-      </h1>
-
-      <p class="hero-text">
-        Ask a question, find information,
-        or search the web.
-      </p>
-
-      <form
-        id="searchForm"
-        class="search-box"
+      <button
+        class="modal-close"
+        data-close-modal
+        type="button"
       >
+        ×
+      </button>
 
-        <span class="search-icon">
-          ⌕
-        </span>
+      <div class="modal-header">
 
-        <input
-          id="searchInput"
-          type="text"
-          autocomplete="off"
-          placeholder="Ask NEXUS anything..."
-          maxlength="300"
-        >
-
-        <button
-          type="submit"
-          id="searchButton"
-        >
-
-          <span id="searchButtonText">
-            Search
-          </span>
-
-          <span
-            id="spinner"
-            class="spinner hidden"
-          ></span>
-
-        </button>
-
-      </form>
-
-      <div class="quick-searches">
-
-        <button
-          type="button"
-          data-query="What is JavaScript?"
-        >
-          JavaScript
-        </button>
-
-        <button
-          type="button"
-          data-query="What is artificial intelligence?"
-        >
-          AI
-        </button>
-
-        <button
-          type="button"
-          data-query="What is photosynthesis?"
-        >
-          Science
-        </button>
-
-        <button
-          type="button"
-          data-query="Who was Albert Einstein?"
-        >
-          History
-        </button>
-
-      </div>
-
-    </section>
-
-    <section
-      id="resultsSection"
-      class="results-section hidden"
-    >
-
-      <div class="results-header">
+        <div class="settings-icon">
+          ⚙
+        </div>
 
         <div>
 
-          <div class="results-label">
-            SEARCH RESULTS
+          <div class="eyebrow">
+            SYSTEM
           </div>
 
-          <h2 id="resultsTitle"></h2>
+          <h2>Settings</h2>
 
         </div>
 
+      </div>
+
+      <div class="setting-row">
+
+        <div>
+          <strong>Appearance</strong>
+          <p>Switch between dark and light mode.</p>
+        </div>
+
         <button
-          id="clearButton"
-          class="clear-button"
+          id="modalThemeButton"
+          class="toggle-button"
+          type="button"
+        >
+          Toggle
+        </button>
+
+      </div>
+
+      <div class="setting-row">
+
+        <div>
+          <strong>Search history</strong>
+          <p>Keep recent searches on this device.</p>
+        </div>
+
+        <button
+          id="clearHistory"
+          class="danger-button"
           type="button"
         >
           Clear
@@ -162,68 +625,9 @@
 
       </div>
 
-      <div
-        id="answerBox"
-        class="answer-box hidden"
-      ></div>
+    </div>
 
-      <div id="results"></div>
-
-      <div
-        id="googleFallback"
-        class="google-box hidden"
-      >
-
-        <div>
-
-          <strong>
-            Didn't find what you're looking for?
-          </strong>
-
-          <p>
-            Search the wider web using Google.
-          </p>
-
-        </div>
-
-        <a
-          id="googleLink"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Search Google →
-        </a>
-
-      </div>
-
-    </section>
-
-    <section
-      id="historySection"
-      class="history-section hidden"
-    >
-
-      <div class="results-label">
-        RECENT SEARCHES
-      </div>
-
-      <div id="history"></div>
-
-    </section>
-
-  </main>
-
-  <footer>
-
-    <span>NEXUS</span>
-
-    <span>•</span>
-
-    <span>
-      Built with JavaScript
-    </span>
-
-  </footer>
+  </div>
 
   <script src="/app.js"></script>
 
