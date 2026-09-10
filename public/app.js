@@ -1,13 +1,3 @@
-const searchForm = document.getElementById("searchForm");
-const searchInput = document.getElementById("searchInput");
-
-const searchButton = document.getElementById("searchButton");
-const searchButtonText = document.getElementById("searchButtonText");
-const spinner = document.getElementById("spinner");
-
-const clearInput = document.getElementById("clearInput");
-
-const resultsSection = document.getElementById("resultsSection");
 const resultsTitle = document.getElementById("resultsTitle");
 const results = document.getElementById("results");
 
