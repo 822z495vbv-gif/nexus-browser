@@ -247,3 +247,177 @@
 <script src="/app.js"></script>
 </body>
 </html>
+<button
+  id="adminNav"
+  class="nav admin-only hidden"
+  data-view="admin"
+  type="button"
+>
+  <span>♛</span>
+  <span>Admin Panel</span>
+</button><!-- =========================
+     ADMIN VIEW
+========================= -->
+
+<section id="adminView" class="view">
+
+  <div class="page-header">
+
+    <div>
+
+      <div class="eyebrow">
+        NEXUS CONTROL CENTER
+      </div>
+
+      <h1>Admin Panel</h1>
+
+      <p>
+        Manage NEXUS system status and maintenance.
+      </p>
+
+    </div>
+
+  </div>
+
+
+  <div class="admin-grid">
+
+
+    <!-- SYSTEM STATUS -->
+
+    <div class="admin-card">
+
+      <div class="admin-card-top">
+
+        <span>
+          System Status
+        </span>
+
+        <span id="adminStatusBadge">
+          ● ONLINE
+        </span>
+
+      </div>
+
+
+      <div
+        id="adminStatusText"
+        class="admin-status-big"
+      >
+        NEXUS is online.
+      </div>
+
+    </div>
+
+
+    <!-- MAINTENANCE -->
+
+    <div class="admin-card">
+
+      <div class="admin-card-title">
+        Maintenance
+      </div>
+
+      <p>
+        Lock NEXUS while you're working on updates.
+        Your admin account can still access it.
+      </p>
+
+
+      <input
+        id="maintenanceTitle"
+        type="text"
+        placeholder="Maintenance title"
+      >
+
+
+      <textarea
+        id="maintenanceMessage"
+        placeholder="Maintenance message"
+        rows="4"
+      ></textarea>
+
+
+      <div class="admin-actions">
+
+        <button
+          id="lockWebsite"
+          class="danger-btn"
+          type="button"
+        >
+          🔒 Lock Website
+        </button>
+
+
+        <button
+          id="unlockWebsite"
+          class="success-btn"
+          type="button"
+        >
+          🔓 Unlock Website
+        </button>
+
+      </div>
+
+
+      <div
+        id="adminMessage"
+        class="admin-message"
+      ></div>
+
+    </div>
+
+
+    <!-- SYSTEM INFORMATION -->
+
+    <div class="admin-card">
+
+      <div class="admin-card-title">
+        System Information
+      </div>
+
+
+      <div class="admin-stat">
+
+        <span>
+          Users
+        </span>
+
+        <strong id="adminUsers">
+          —
+        </strong>
+
+      </div>
+
+
+      <div class="admin-stat">
+
+        <span>
+          Sessions
+        </span>
+
+        <strong id="adminSessions">
+          —
+        </strong>
+
+      </div>
+
+
+      <div class="admin-stat">
+
+        <span>
+          Administrator
+        </span>
+
+        <strong>
+          CALSGC
+        </strong>
+
+      </div>
+
+    </div>
+
+
+  </div>
+
+</section>
