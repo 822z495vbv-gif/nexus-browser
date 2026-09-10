@@ -1,17 +1,18 @@
 "use strict";
 
-const $ = id => document.getElementById(id);
+const $ = id =>
+  document.getElementById(id);
 
 let currentUser = null;
-let historyData = [];
-let savedData = [];
+let currentTab = "web";
+
 
 /* =========================
    HELPERS
 ========================= */
 
 function escapeHTML(value) {
-  return String(value ?? "")
+  return String(value || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -19,846 +20,344 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
-function initial(name) {
-  return (name || "N").charAt(0).toUpperCase();
-}
-
-function showError(id, message) {
-  const el = $(id);
-  if (el) el.textContent = message || "";
-}
-
-/* =========================
-   AUTH UI
-========================= */
-
-function showApp(user) {
-  currentUser = user;
-
-  $("authScreen").classList.add("hidden");
-  $("app").classList.remove("hidden");
-
-  const letter = initial(user.username);
-
-  $("profileInitial").textContent = letter;
-  $("accountInitial").textContent = letter;
-  $("accountAvatar").textContent = letter;
-
-  $("accountName").textContent = user.username;
-  $("accountName2").textContent = user.username;
-  $("settingsAccount").textContent =
-    `Signed in as ${user.username}`;
-
-  loadMe();
-}
-
-function showAuth() {
-  currentUser = null;
-
-  $("app").classList.add("hidden");
-  $("authScreen").classList.remove("hidden");
-}
-
-/* =========================
-   LOGIN
-========================= */
-
-async function login() {
-  const username = $("loginUsername").value.trim();
-  const password = $("loginPassword").value;
-
-  showError("loginError", "");
-
-  if (!username || !password) {
-    showError(
-      "loginError",
-      "Enter your username and password."
-    );
-    return;
-  }
-
-  const button = $("loginBtn");
-
-  button.disabled = true;
-  button.textContent = "Signing in...";
-
-  try {
-    const response = await fetch("/api/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+async function api(
+  url,
+  options = {}
+) {
+  const response = await fetch(
+    url,
+    {
       credentials: "same-origin",
-      body: JSON.stringify({
-        username,
-        password
-      })
-    });
-
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error("Server returned an invalid response.");
-    }
-
-    if (!response.ok || !data.ok) {
-      showError(
-        "loginError",
-        data.error || "Unable to sign in."
-      );
-      return;
-    }
-
-    showApp(data.user);
-
-  } catch (error) {
-    console.error("LOGIN ERROR:", error);
-
-    showError(
-      "loginError",
-      "NEXUS couldn't connect to the server."
-    );
-
-  } finally {
-    button.disabled = false;
-    button.textContent = "Sign in";
-  }
-}
-
-/* =========================
-   REGISTER
-========================= */
-
-function passwordStrength(password) {
-  let score = 0;
-
-  if (password.length >= 8) score++;
-  if (password.length >= 12) score++;
-  if (/[a-z]/.test(password)) score++;
-  if (/[A-Z]/.test(password)) score++;
-  if (/\d/.test(password)) score++;
-  if (/[^A-Za-z0-9]/.test(password)) score++;
-
-  if (!password) {
-    return ["NONE", 0];
-  }
-
-  if (score <= 2) {
-    return ["WEAK", 25];
-  }
-
-  if (score === 3) {
-    return ["MEDIUM", 50];
-  }
-
-  if (score === 4) {
-    return ["STRONG", 75];
-  }
-
-  return ["VERY STRONG", 100];
-}
-
-async function register() {
-  const username = $("registerUsername").value.trim();
-  const password = $("registerPassword").value;
-  const confirm = $("confirmPassword").value;
-
-  showError("registerError", "");
-
-  if (!username || !password || !confirm) {
-    showError(
-      "registerError",
-      "Fill in all fields."
-    );
-    return;
-  }
-
-  if (password !== confirm) {
-    showError(
-      "registerError",
-      "Passwords do not match."
-    );
-    return;
-  }
-
-  if (password.length < 8) {
-    showError(
-      "registerError",
-      "Password must be at least 8 characters."
-    );
-    return;
-  }
-
-  const button = $("registerBtn");
-
-  button.disabled = true;
-  button.textContent = "Creating account...";
-
-  try {
-    const response = await fetch("/api/register", {
-      method: "POST",
+      ...options,
       headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        username,
-        password
-      })
-    });
-
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error("Invalid server response.");
+        ...(options.body
+          ? {
+              "Content-Type":
+                "application/json"
+            }
+          : {}),
+        ...(options.headers || {})
+      }
     }
+  );
 
-    if (!response.ok || !data.ok) {
-      showError(
-        "registerError",
-        data.error || "Unable to create account."
-      );
-      return;
-    }
+  let data = {};
 
-    showApp(data.user);
-
-  } catch (error) {
-    console.error("REGISTER ERROR:", error);
-
-    showError(
-      "registerError",
-      "NEXUS couldn't connect to the server."
-    );
-
-  } finally {
-    button.disabled = false;
-    button.textContent = "Create account";
-  }
-}
-
-/* =========================
-   LOAD ACCOUNT
-========================= */
-
-async function loadMe() {
   try {
-    const response = await fetch("/api/me", {
-      credentials: "same-origin"
-    });
-
-    if (!response.ok) {
-      showAuth();
-      return;
-    }
-
-    const data = await response.json();
-
-    currentUser = data.user;
-    historyData = data.history || [];
-    savedData = data.saved || [];
-
-    renderHistory();
-    renderSaved();
-
-  } catch (error) {
-    console.error("ME ERROR:", error);
-  }
-}
-
-/* =========================
-   LOGOUT
-========================= */
-
-async function logout() {
-  try {
-    await fetch("/api/logout", {
-      method: "POST",
-      credentials: "same-origin"
-    });
+    data = await response.json();
   } catch {}
 
-  currentUser = null;
-  historyData = [];
-  savedData = [];
+  if (!response.ok) {
+    throw new Error(
+      data.error ||
+      "Something went wrong."
+    );
+  }
 
-  $("accountMenu").classList.add("hidden");
-
-  $("loginUsername").value = "";
-  $("loginPassword").value = "";
-
-  showAuth();
+  return data;
 }
+
+
+/* =========================
+   AUTH SWITCHING
+========================= */
+
+function showLogin() {
+  $("loginBox")
+    .classList.remove("hidden");
+
+  $("registerBox")
+    .classList.add("hidden");
+
+  $("loginError").textContent = "";
+}
+
+function showRegister() {
+  $("loginBox")
+    .classList.add("hidden");
+
+  $("registerBox")
+    .classList.remove("hidden");
+
+  $("registerError").textContent = "";
+}
+
 
 /* =========================
    PASSWORD STRENGTH
 ========================= */
 
-$("registerPassword").addEventListener(
-  "input",
-  event => {
-    const [text, width] =
-      passwordStrength(event.target.value);
+function passwordStrength(password) {
 
-    $("strengthText").textContent = text;
-    $("strengthBar").style.width = `${width}%`;
+  let score = 0;
+
+  if (password.length >= 8)
+    score++;
+
+  if (password.length >= 12)
+    score++;
+
+  if (/[A-Z]/.test(password))
+    score++;
+
+  if (/[0-9]/.test(password))
+    score++;
+
+  if (/[^A-Za-z0-9]/.test(password))
+    score++;
+
+  let width = "0%";
+  let text = "Password strength";
+
+  if (score === 1) {
+    width = "20%";
+    text = "Weak";
   }
-);
+
+  if (score === 2) {
+    width = "40%";
+    text = "Fair";
+  }
+
+  if (score === 3) {
+    width = "60%";
+    text = "Medium";
+  }
+
+  if (score === 4) {
+    width = "80%";
+    text = "Strong";
+  }
+
+  if (score >= 5) {
+    width = "100%";
+    text = "Very strong";
+  }
+
+  $("strengthBar").style.width =
+    width;
+
+  $("strengthText").textContent =
+    text;
+}
+
 
 /* =========================
-   AUTH BUTTONS
+   AUTH
 ========================= */
-
-$("loginBtn").addEventListener(
-  "click",
-  event => {
-    event.preventDefault();
-    login();
-  }
-);
-
-$("registerBtn").addEventListener(
-  "click",
-  event => {
-    event.preventDefault();
-    register();
-  }
-);
 
 $("showRegister").addEventListener(
   "click",
-  event => {
-    event.preventDefault();
-
-    $("loginBox").classList.add("hidden");
-    $("registerBox").classList.remove("hidden");
-
-    showError("loginError", "");
-  }
+  showRegister
 );
 
 $("showLogin").addEventListener(
   "click",
-  event => {
-    event.preventDefault();
-
-    $("registerBox").classList.add("hidden");
-    $("loginBox").classList.remove("hidden");
-
-    showError("registerError", "");
-  }
+  showLogin
 );
 
-/* Enter key login */
-
-$("loginPassword").addEventListener(
-  "keydown",
-  event => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      login();
-    }
-  }
-);
-
-$("loginUsername").addEventListener(
-  "keydown",
-  event => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      login();
-    }
-  }
-);
-
-/* =========================
-   ACCOUNT MENU
-========================= */
-
-$("profileBtn").addEventListener(
-  "click",
-  event => {
-    event.stopPropagation();
-
-    $("accountMenu").classList.toggle(
-      "hidden"
+$("registerPassword").addEventListener(
+  "input",
+  e => {
+    passwordStrength(
+      e.target.value
     );
   }
 );
 
-document.addEventListener(
-  "click",
-  event => {
-    const menu = $("accountMenu");
-    const button = $("profileBtn");
-
-    if (
-      !menu.contains(event.target) &&
-      !button.contains(event.target)
-    ) {
-      menu.classList.add("hidden");
-    }
-  }
-);
-
-$("accountLogout").addEventListener(
-  "click",
-  logout
-);
-
-$("settingsLogout").addEventListener(
-  "click",
-  logout
-);
-
-$("addAccount").addEventListener(
-  "click",
-  () => {
-    logout();
-
-    $("registerBox").classList.remove("hidden");
-    $("loginBox").classList.add("hidden");
-  }
-);
-
-/* =========================
-   SEARCH
-========================= */
-
-async function saveHistory(query) {
-  try {
-    await fetch("/api/history", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify({ query })
-    });
-  } catch {}
-}
-
-async function saveResult(result) {
-  try {
-    const response = await fetch("/api/saved", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      credentials: "same-origin",
-      body: JSON.stringify(result)
-    });
-
-    if (response.ok) {
-      await loadMe();
-      alert("Saved to your NEXUS account.");
-    }
-
-  } catch {
-    alert("Couldn't save this result.");
-  }
-}
-
-function renderResults(data) {
-  const results = $("results");
-
-  if (!data.found) {
-    results.innerHTML = `
-      <div class="answer">
-        <div class="answer-label">NO DIRECT RESULT</div>
-        <h3>No Wikipedia results found.</h3>
-        <p>Try the wider web search below.</p>
-      </div>
-
-      <div class="fallback">
-        Search the web for
-        <strong>${escapeHTML(data.query)}</strong>
-        <br><br>
-
-        <a
-          href="${data.googleURL}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open Google results →
-        </a>
-      </div>
-    `;
-
-    return;
-  }
-
-  results.innerHTML = `
-    <div class="answer">
-      <div class="answer-label">
-        NEXUS RESULTS
-      </div>
-
-      <h3>
-        Results for "${escapeHTML(data.query)}"
-      </h3>
-
-      <p>
-        Information discovered through NEXUS search.
-      </p>
-    </div>
-
-    ${data.results.map((r, index) => `
-      <article class="result-card">
-
-        <div class="result-top">
-
-          <div>
-            <a
-              class="result-title"
-              href="${r.url}"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              ${escapeHTML(r.title)}
-            </a>
-
-            <div class="result-source">
-              WIKIPEDIA · RESULT ${index + 1}
-            </div>
-          </div>
-
-          <button
-            class="save-btn"
-            data-save="${index}"
-            type="button"
-          >
-            ☆ Save
-          </button>
-
-        </div>
-
-        <div class="result-description">
-          ${escapeHTML(r.description)}
-        </div>
-
-        <p class="result-excerpt">
-          ${escapeHTML(r.excerpt)}
-        </p>
-
-        <a
-          href="${r.url}"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="result-title"
-        >
-          Read more →
-        </a>
-
-      </article>
-    `).join("")}
-
-    <div class="fallback">
-      Want more results?
-
-      <a
-        href="${data.googleURL}"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        Search the wider web →
-      </a>
-    </div>
-  `;
-
-  document
-    .querySelectorAll("[data-save]")
-    .forEach(button => {
-
-      button.addEventListener(
-        "click",
-        () => {
-          const index =
-            Number(button.dataset.save);
-
-          saveResult(data.results[index]);
-        }
-      );
-
-    });
-}
-
-$("searchForm").addEventListener(
+$("loginForm").addEventListener(
   "submit",
-  async event => {
+  async e => {
 
-    event.preventDefault();
+    e.preventDefault();
 
-    const query =
-      $("searchInput").value.trim();
+    const username =
+      $("loginUsername")
+        .value.trim();
 
-    if (!query) return;
+    const password =
+      $("loginPassword")
+        .value;
 
-    $("spinner").classList.remove("hidden");
-    $("searchText").classList.add("hidden");
+    $("loginError")
+      .textContent = "";
+
+    $("loginBtn")
+      .disabled = true;
+
+    $("loginBtn")
+      .textContent = "Signing in...";
 
     try {
 
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Search failed."
-        );
-      }
-
-      renderResults(data);
-
-      await saveHistory(query);
-      await loadMe();
-
-    } catch (error) {
-
-      console.error(error);
-
-      $("results").innerHTML = `
-        <div class="answer">
-          <h3>
-            NEXUS couldn't complete the search.
-          </h3>
-
-          <p>
-            ${escapeHTML(error.message)}
-          </p>
-        </div>
-      `;
-
-    } finally {
-
-      $("spinner").classList.add("hidden");
-      $("searchText").classList.remove("hidden");
-
-    }
-  }
-);
-
-/* =========================
-   AUTOCOMPLETE
-========================= */
-
-$("searchInput").addEventListener(
-  "input",
-  () => {
-
-    const query =
-      $("searchInput").value
-        .trim()
-        .toLowerCase();
-
-    if (!query) {
-      $("suggestions").innerHTML = "";
-      return;
-    }
-
-    const items = [
-      "Artificial Intelligence",
-      "Space exploration",
-      "Cybersecurity",
-      "Quantum computing",
-      "Machine learning",
-      "Web development"
-    ];
-
-    const matches = items.filter(item =>
-      item.toLowerCase().includes(query)
-    );
-
-    $("suggestions").innerHTML =
-      matches.slice(0, 5).map(item => `
-        <button
-          type="button"
-          class="suggestion"
-          data-suggest="${escapeHTML(item)}"
-        >
-          ⌕ ${escapeHTML(item)}
-        </button>
-      `).join("");
-
-    document
-      .querySelectorAll("[data-suggest]")
-      .forEach(button => {
-
-        button.addEventListener(
-          "click",
-          () => {
-
-            $("searchInput").value =
-              button.dataset.suggest;
-
-            $("suggestions").innerHTML = "";
-
-            $("searchForm").requestSubmit();
-          }
-        );
-
-      });
-  }
-);
-
-$("clearBtn").addEventListener(
-  "click",
-  () => {
-
-    $("searchInput").value = "";
-    $("suggestions").innerHTML = "";
-    $("searchInput").focus();
-
-  }
-);
-
-document
-  .querySelectorAll(".suggestions-row button")
-  .forEach(button => {
-
-    button.addEventListener(
-      "click",
-      () => {
-
-        $("searchInput").value =
-          button.dataset.query;
-
-        $("searchForm").requestSubmit();
-
-      }
-    );
-
-  });
-
-/* =========================
-   HISTORY
-========================= */
-
-function renderHistory() {
-
-  const box = $("historyList");
-
-  if (!historyData.length) {
-    box.innerHTML = `
-      <div class="list-item">
-        <span>No searches yet.</span>
-      </div>
-    `;
-    return;
-  }
-
-  box.innerHTML = historyData.map(
-    item => `
-      <div class="list-item">
-
-        <strong>
-          ◷ ${escapeHTML(item.query)}
-        </strong>
-
-        <button
-          type="button"
-          data-history="${escapeHTML(item.query)}"
-        >
-          Search →
-        </button>
-
-      </div>
-    `
-  ).join("");
-
-  document
-    .querySelectorAll("[data-history]")
-    .forEach(button => {
-
-      button.addEventListener(
-        "click",
-        () => {
-
-          $("searchInput").value =
-            button.dataset.history;
-
-          switchView("search");
-
-          $("searchForm").requestSubmit();
-
+      const data = await api(
+        "/api/login",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            username,
+            password
+          })
         }
       );
 
-    });
-}
+      enterApp(data.user);
 
-function renderSaved() {
+    } catch (error) {
 
-  const box = $("savedList");
+      $("loginError")
+        .textContent =
+        error.message;
 
-  if (!savedData.length) {
-    box.innerHTML = `
-      <div class="list-item">
-        <span>No saved results yet.</span>
-      </div>
-    `;
-    return;
-  }
+    } finally {
 
-  box.innerHTML = savedData.map(
-    item => `
-      <div class="list-item">
+      $("loginBtn")
+        .disabled = false;
 
-        <div>
-          <strong>
-            ${escapeHTML(item.title)}
-          </strong>
-
-          <div class="result-source">
-            SAVED RESULT
-          </div>
-        </div>
-
-        <a
-          href="${escapeHTML(item.url)}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Open →
-        </a>
-
-      </div>
-    `
-  ).join("");
-}
-
-$("clearHistoryBtn").addEventListener(
-  "click",
-  async () => {
-
-    await fetch("/api/history", {
-      method: "DELETE"
-    });
-
-    await loadMe();
-
+      $("loginBtn")
+        .textContent =
+        "Sign in";
+    }
   }
 );
 
-$("clearSavedBtn").addEventListener(
-  "click",
-  async () => {
+$("registerForm").addEventListener(
+  "submit",
+  async e => {
 
-    await fetch("/api/saved", {
-      method: "DELETE"
-    });
+    e.preventDefault();
 
-    await loadMe();
+    const username =
+      $("registerUsername")
+        .value.trim();
 
+    const password =
+      $("registerPassword")
+        .value;
+
+    const confirm =
+      $("confirmPassword")
+        .value;
+
+    $("registerError")
+      .textContent = "";
+
+    if (password !== confirm) {
+      $("registerError")
+        .textContent =
+        "Passwords do not match.";
+      return;
+    }
+
+    if (password.length < 8) {
+      $("registerError")
+        .textContent =
+        "Password must be at least 8 characters.";
+      return;
+    }
+
+    $("registerBtn")
+      .disabled = true;
+
+    $("registerBtn")
+      .textContent =
+      "Creating account...";
+
+    try {
+
+      const data = await api(
+        "/api/register",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            username,
+            password
+          })
+        }
+      );
+
+      enterApp(data.user);
+
+    } catch (error) {
+
+      $("registerError")
+        .textContent =
+        error.message;
+
+    } finally {
+
+      $("registerBtn")
+        .disabled = false;
+
+      $("registerBtn")
+        .textContent =
+        "Create account";
+    }
   }
 );
+
+
+/* =========================
+   ENTER APP
+========================= */
+
+function enterApp(user) {
+
+  currentUser = user;
+
+  $("authScreen")
+    .classList.add("hidden");
+
+  $("app")
+    .classList.remove("hidden");
+
+  updateAccountUI();
+
+  setupAdmin();
+
+  switchView("search");
+}
+
+
+/* =========================
+   ACCOUNT UI
+========================= */
+
+function updateAccountUI() {
+
+  if (!currentUser) return;
+
+  const username =
+    currentUser.username;
+
+  const initial =
+    username
+      .charAt(0)
+      .toUpperCase();
+
+  $("profileInitial")
+    .textContent = initial;
+
+  $("accountInitial")
+    .textContent = initial;
+
+  $("accountAvatar")
+    .textContent = initial;
+
+  $("accountName")
+    .textContent = username;
+
+  $("accountName2")
+    .textContent = username;
+
+  $("accountMenuName")
+    .textContent = username;
+
+  $("settingsAccount")
+    .textContent =
+    `Signed in as ${username}`;
+}
+
 
 /* =========================
    NAVIGATION
@@ -868,8 +367,8 @@ function switchView(view) {
 
   document
     .querySelectorAll(".view")
-    .forEach(element => {
-      element.classList.remove(
+    .forEach(section => {
+      section.classList.remove(
         "active-view"
       );
     });
@@ -885,142 +384,1079 @@ function switchView(view) {
 
   document
     .querySelectorAll(".nav")
-    .forEach(nav => {
-
-      nav.classList.toggle(
+    .forEach(button => {
+      button.classList.toggle(
         "active",
-        nav.dataset.view === view
+        button.dataset.view === view
       );
-
     });
 
-  $("sidebar").classList.remove("open");
-  $("overlay").classList.remove("show");
+  if (view === "history") {
+    loadHistory();
+  }
+
+  if (view === "saved") {
+    loadSaved();
+  }
+
+  if (view === "admin") {
+    loadAdminStatus();
+  }
+
+  closeSidebar();
 }
 
 document
   .querySelectorAll(".nav")
-  .forEach(nav => {
+  .forEach(button => {
 
-    nav.addEventListener(
+    button.addEventListener(
       "click",
-      () => switchView(nav.dataset.view)
+      () => {
+        switchView(
+          button.dataset.view
+        );
+      }
     );
 
   });
+
+
+/* =========================
+   MOBILE MENU
+========================= */
 
 $("menuBtn").addEventListener(
   "click",
   () => {
 
-    $("sidebar").classList.add("open");
-    $("overlay").classList.add("show");
+    $("sidebar")
+      .classList.add("open");
 
+    $("overlay")
+      .classList.add("show");
   }
 );
 
 $("overlay").addEventListener(
   "click",
-  () => {
+  closeSidebar
+);
 
-    $("sidebar").classList.remove("open");
-    $("overlay").classList.remove("show");
+function closeSidebar() {
 
+  $("sidebar")
+    .classList.remove("open");
+
+  $("overlay")
+    .classList.remove("show");
+}
+
+
+/* =========================
+   ACCOUNT MENU
+========================= */
+
+$("profileBtn").addEventListener(
+  "click",
+  e => {
+
+    e.stopPropagation();
+
+    $("accountMenu")
+      .classList.toggle(
+        "hidden"
+      );
   }
 );
+
+document.addEventListener(
+  "click",
+  () => {
+    $("accountMenu")
+      .classList.add("hidden");
+  }
+);
+
+$("accountMenu").addEventListener(
+  "click",
+  e => {
+    e.stopPropagation();
+  }
+);
+
+
+/* =========================
+   LOGOUT
+========================= */
+
+async function logout() {
+
+  try {
+    await api(
+      "/api/logout",
+      {
+        method: "POST"
+      }
+    );
+  } catch {}
+
+  currentUser = null;
+
+  $("app")
+    .classList.add("hidden");
+
+  $("authScreen")
+    .classList.remove("hidden");
+
+  $("loginUsername")
+    .value = "";
+
+  $("loginPassword")
+    .value = "";
+
+  showLogin();
+}
+
+$("accountLogout")
+  .addEventListener(
+    "click",
+    logout
+  );
+
+$("settingsLogout")
+  .addEventListener(
+    "click",
+    logout
+  );
+
+$("addAccount")
+  .addEventListener(
+    "click",
+    logout
+  );
+
+
+/* =========================
+   SEARCH TABS
+========================= */
+
+document
+  .querySelectorAll(".tab")
+  .forEach(tab => {
+
+    tab.addEventListener(
+      "click",
+      () => {
+
+        currentTab =
+          tab.dataset.tab;
+
+        document
+          .querySelectorAll(".tab")
+          .forEach(t =>
+            t.classList.remove(
+              "active"
+            )
+          );
+
+        tab.classList.add(
+          "active"
+        );
+
+        if (
+          currentTab === "ai"
+        ) {
+          renderAI(
+            $("searchInput").value
+          );
+        }
+
+      }
+    );
+
+  });
+
+
+/* =========================
+   SEARCH
+========================= */
+
+$("searchForm").addEventListener(
+  "submit",
+  async e => {
+
+    e.preventDefault();
+
+    const query =
+      $("searchInput")
+        .value.trim();
+
+    if (!query) return;
+
+    if (
+      currentTab === "ai"
+    ) {
+      renderAI(query);
+      return;
+    }
+
+    await search(query);
+  }
+);
+
+$("searchInput").addEventListener(
+  "input",
+  e => {
+
+    const value =
+      e.target.value.trim();
+
+    $("clearBtn")
+      .classList.toggle(
+        "hidden",
+        !value
+      );
+
+    showSuggestions(value);
+  }
+);
+
+$("clearBtn").addEventListener(
+  "click",
+  () => {
+
+    $("searchInput")
+      .value = "";
+
+    $("clearBtn")
+      .classList.add(
+        "hidden"
+      );
+
+    $("suggestions")
+      .classList.add(
+        "hidden"
+      );
+
+    $("searchInput").focus();
+  }
+);
+
+async function search(query) {
+
+  $("spinner")
+    .classList.remove(
+      "hidden"
+    );
+
+  $("results")
+    .innerHTML = "";
+
+  $("searchText")
+    .textContent =
+    `Searching for "${query}"...`;
+
+  $("suggestions")
+    .classList.add(
+      "hidden"
+    );
+
+  try {
+
+    const data = await api(
+      `/api/search?q=${encodeURIComponent(
+        query
+      )}`
+    );
+
+    if (
+      data.mode === "result"
+    ) {
+
+      renderResult(
+        data.result,
+        query
+      );
+
+      $("searchText")
+        .textContent =
+        `Results for "${query}"`;
+
+    } else {
+
+      renderFallback(
+        data
+      );
+
+      $("searchText")
+        .textContent =
+        `No direct result for "${query}"`;
+    }
+
+  } catch (error) {
+
+    $("results").innerHTML = `
+      <div class="fallback-card">
+        <h2>Something went wrong.</h2>
+        <p>${escapeHTML(
+          error.message
+        )}</p>
+      </div>
+    `;
+
+  } finally {
+
+    $("spinner")
+      .classList.add(
+        "hidden"
+      );
+  }
+}
+
+
+/* =========================
+   RESULT
+========================= */
+
+function renderResult(
+  result,
+  query
+) {
+
+  const image =
+    result.image
+      ? `
+        <img
+          src="${escapeHTML(result.image)}"
+          alt=""
+          style="
+            width:100%;
+            max-height:260px;
+            object-fit:cover;
+            border-radius:14px;
+            margin-bottom:16px;
+          "
+        >
+      `
+      : "";
+
+  $("results").innerHTML = `
+    <article class="result-card">
+
+      ${image}
+
+      <div class="result-source">
+        <span>◉</span>
+        <span>${escapeHTML(
+          result.source
+        )}</span>
+      </div>
+
+      <h2>
+        <a
+          href="${escapeHTML(result.url)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          ${escapeHTML(result.title)}
+        </a>
+      </h2>
+
+      <p>
+        ${escapeHTML(
+          result.description
+        )}
+      </p>
+
+      <div class="result-actions">
+
+        <a
+          class="small-btn"
+          href="${escapeHTML(result.url)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Open source
+        </a>
+
+        <button
+          class="small-btn"
+          id="saveCurrent"
+          type="button"
+        >
+          ☆ Save
+        </button>
+
+      </div>
+
+    </article>
+  `;
+
+  $("saveCurrent")
+    .addEventListener(
+      "click",
+      async () => {
+
+        try {
+
+          await api(
+            "/api/saved",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                title:
+                  result.title,
+                url:
+                  result.url
+              })
+            }
+          );
+
+          $("saveCurrent")
+            .textContent =
+            "✓ Saved";
+
+        } catch (error) {
+
+          $("saveCurrent")
+            .textContent =
+            "Couldn't save";
+        }
+      }
+    );
+}
+
+
+/* =========================
+   FALLBACK
+========================= */
+
+function renderFallback(data) {
+
+  $("results").innerHTML = `
+    <div class="fallback-card">
+
+      <div class="eyebrow">
+        WEB FALLBACK
+      </div>
+
+      <h2>
+        NEXUS couldn't find a direct result.
+      </h2>
+
+      <p>
+        You can continue your search on Google.
+      </p>
+
+      <a
+        href="${escapeHTML(
+          data.fallback
+        )}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Search the web →
+      </a>
+
+    </div>
+  `;
+}
+
+
+/* =========================
+   AI SECTION
+========================= */
+
+function renderAI(query) {
+
+  if (!query.trim()) {
+    $("results").innerHTML = "";
+    return;
+  }
+
+  $("searchText")
+    .textContent =
+    "NEXUS AI";
+
+  $("results").innerHTML = `
+    <div class="ai-card">
+
+      <div class="ai-label">
+        ✦ NEXUS AI
+      </div>
+
+      <h2>
+        Let's break that down.
+      </h2>
+
+      <p>
+        I don't have a real AI model connected
+        to this version yet, so I won't pretend
+        this is a real AI answer.
+      </p>
+
+      <p>
+        Your question was:
+        <strong>
+          ${escapeHTML(query)}
+        </strong>
+      </p>
+
+      <p>
+        The next upgrade can connect NEXUS
+        to a real AI backend so this section
+        can give natural, conversational answers.
+      </p>
+
+    </div>
+  `;
+}
+
+
+/* =========================
+   SUGGESTIONS
+========================= */
+
+function showSuggestions(value) {
+
+  if (!value) {
+    $("suggestions")
+      .classList.add(
+        "hidden"
+      );
+    return;
+  }
+
+  const suggestions = [
+    `${value}`,
+    `${value} explained`,
+    `${value} meaning`,
+    `${value} news`
+  ];
+
+  $("suggestions").innerHTML =
+    suggestions
+      .map(
+        item => `
+          <div
+            class="suggestion"
+            data-value="${escapeHTML(item)}"
+          >
+            ⌕ ${escapeHTML(item)}
+          </div>
+        `
+      )
+      .join("");
+
+  $("suggestions")
+    .classList.remove(
+      "hidden"
+    );
+
+  document
+    .querySelectorAll(
+      ".suggestion"
+    )
+    .forEach(item => {
+
+      item.addEventListener(
+        "click",
+        () => {
+
+          const value =
+            item.dataset.value;
+
+          $("searchInput")
+            .value = value;
+
+          $("suggestions")
+            .classList.add(
+              "hidden"
+            );
+
+          search(value);
+        }
+      );
+
+    });
+}
+
+
+/* =========================
+   HISTORY
+========================= */
+
+async function loadHistory() {
+
+  try {
+
+    const data =
+      await api(
+        "/api/history"
+      );
+
+    const list =
+      data.history || [];
+
+    if (!list.length) {
+
+      $("historyList")
+        .innerHTML = `
+          <div class="empty">
+            No searches yet.
+          </div>
+        `;
+
+      return;
+    }
+
+    $("historyList")
+      .innerHTML =
+      list.map(
+        item => `
+          <div class="list-card">
+
+            <div class="list-card-main">
+
+              <strong>
+                ${escapeHTML(
+                  item.query
+                )}
+              </strong>
+
+              <span>
+                ${escapeHTML(
+                  item.title ||
+                  item.url
+                )}
+              </span>
+
+            </div>
+
+            <a
+              class="small-btn"
+              href="${escapeHTML(
+                item.url
+              )}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open
+            </a>
+
+          </div>
+        `
+      ).join("");
+
+  } catch (error) {
+
+    $("historyList")
+      .innerHTML = `
+        <div class="empty">
+          ${escapeHTML(
+            error.message
+          )}
+        </div>
+      `;
+  }
+}
+
+$("clearHistoryBtn")
+  .addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        await api(
+          "/api/history",
+          {
+            method: "DELETE"
+          }
+        );
+
+        loadHistory();
+
+      } catch {}
+    }
+  );
+
+
+/* =========================
+   SAVED
+========================= */
+
+async function loadSaved() {
+
+  try {
+
+    const data =
+      await api(
+        "/api/saved"
+      );
+
+    const list =
+      data.saved || [];
+
+    if (!list.length) {
+
+      $("savedList")
+        .innerHTML = `
+          <div class="empty">
+            No saved pages yet.
+          </div>
+        `;
+
+      return;
+    }
+
+    $("savedList")
+      .innerHTML =
+      list.map(
+        item => `
+          <div class="list-card">
+
+            <div class="list-card-main">
+
+              <strong>
+                ${escapeHTML(
+                  item.title
+                )}
+              </strong>
+
+              <span>
+                ${escapeHTML(
+                  item.url
+                )}
+              </span>
+
+            </div>
+
+            <div
+              style="
+                display:flex;
+                gap:7px;
+              "
+            >
+
+              <a
+                class="small-btn"
+                href="${escapeHTML(
+                  item.url
+                )}"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open
+              </a>
+
+              <button
+                class="small-btn delete-saved"
+                data-id="${escapeHTML(
+                  item.id
+                )}"
+                type="button"
+              >
+                ×
+              </button>
+
+            </div>
+
+          </div>
+        `
+      ).join("");
+
+    document
+      .querySelectorAll(
+        ".delete-saved"
+      )
+      .forEach(button => {
+
+        button.addEventListener(
+          "click",
+          async () => {
+
+            await api(
+              `/api/saved/${button.dataset.id}`,
+              {
+                method: "DELETE"
+              }
+            );
+
+            loadSaved();
+          }
+        );
+
+      });
+
+  } catch (error) {
+
+    $("savedList")
+      .innerHTML = `
+        <div class="empty">
+          ${escapeHTML(
+            error.message
+          )}
+        </div>
+      `;
+  }
+}
+
+$("clearSavedBtn")
+  .addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        await api(
+          "/api/saved",
+          {
+            method: "DELETE"
+          }
+        );
+
+        loadSaved();
+
+      } catch {}
+    }
+  );
+
 
 /* =========================
    THEME
 ========================= */
 
+function loadTheme() {
+
+  const theme =
+    localStorage.getItem(
+      "nexus-theme"
+    );
+
+  if (theme === "light") {
+    document.body
+      .classList.add("light");
+  }
+}
+
 function toggleTheme() {
 
-  document.body.classList.toggle("light");
+  document.body
+    .classList.toggle("light");
 
   localStorage.setItem(
-    "nexus_theme",
-    document.body.classList.contains("light")
+    "nexus-theme",
+    document.body.classList.contains(
+      "light"
+    )
       ? "light"
       : "dark"
   );
 }
 
-if (
-  localStorage.getItem("nexus_theme")
-  === "light"
-) {
-  document.body.classList.add("light");
+$("themeBtn")
+  .addEventListener(
+    "click",
+    toggleTheme
+  );
+
+loadTheme();
+
+
+/* =========================
+   ADMIN
+========================= */
+
+function setupAdmin() {
+
+  const adminNav =
+    $("adminNav");
+
+  if (!adminNav) return;
+
+  if (
+    currentUser &&
+    currentUser.isAdmin
+  ) {
+    adminNav
+      .classList.remove(
+        "hidden"
+      );
+  } else {
+    adminNav
+      .classList.add(
+        "hidden"
+      );
+  }
 }
 
-$("themeBtn").addEventListener(
-  "click",
-  toggleTheme
-);
+async function loadAdminStatus() {
 
-$("settingsTheme").addEventListener(
-  "click",
-  toggleTheme
-);
-
-/* =========================
-   KEYBOARD
-========================= */
-
-document.addEventListener(
-  "keydown",
-  event => {
-
-    if (
-      event.key === "/" &&
-      document.activeElement.tagName !== "INPUT"
-    ) {
-      event.preventDefault();
-      $("searchInput").focus();
-    }
-
-    if (event.key === "Escape") {
-      $("accountMenu").classList.add("hidden");
-      $("suggestions").innerHTML = "";
-    }
-
+  if (
+    !currentUser ||
+    !currentUser.isAdmin
+  ) {
+    return;
   }
-);
-
-/* =========================
-   START NEXUS
-========================= */
-
-(async function boot() {
 
   try {
 
-    const response =
-      await fetch("/api/me", {
-        credentials: "same-origin"
-      });
-
-    if (!response.ok) {
-      showAuth();
-      return;
-    }
-
     const data =
-      await response.json();
+      await api(
+        "/api/admin/status"
+      );
 
-    historyData = data.history || [];
-    savedData = data.saved || [];
+    $("maintenanceTitle")
+      .value =
+      data.title || "";
 
-    showApp(data.user);
+    $("maintenanceMessage")
+      .value =
+      data.message || "";
+
+    $("adminUsers")
+      .textContent =
+      data.users;
+
+    $("adminSessions")
+      .textContent =
+      data.sessions;
+
+    updateAdminStatus(
+      data.maintenance
+    );
 
   } catch (error) {
 
-    console.error(
-      "NEXUS BOOT ERROR:",
-      error
+    $("adminMessage")
+      .textContent =
+      error.message;
+  }
+}
+
+function updateAdminStatus(
+  locked
+) {
+
+  $("adminStatusBadge")
+    .textContent =
+    locked
+      ? "● MAINTENANCE"
+      : "● ONLINE";
+
+  $("adminStatusText")
+    .textContent =
+    locked
+      ? "NEXUS is currently locked."
+      : "NEXUS is online.";
+}
+
+$("lockWebsite")
+  .addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        const title =
+          $("maintenanceTitle")
+            .value.trim();
+
+        const message =
+          $("maintenanceMessage")
+            .value.trim();
+
+        await api(
+          "/api/admin/lock",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              title,
+              message
+            })
+          }
+        );
+
+        updateAdminStatus(
+          true
+        );
+
+        $("adminMessage")
+          .textContent =
+          "✓ NEXUS is now locked.";
+
+      } catch (error) {
+
+        $("adminMessage")
+          .textContent =
+          error.message;
+      }
+    }
+  );
+
+$("unlockWebsite")
+  .addEventListener(
+    "click",
+    async () => {
+
+      try {
+
+        await api(
+          "/api/admin/unlock",
+          {
+            method: "POST"
+          }
+        );
+
+        updateAdminStatus(
+          false
+        );
+
+        $("adminMessage")
+          .textContent =
+          "✓ NEXUS is back online.";
+
+      } catch (error) {
+
+        $("adminMessage")
+          .textContent =
+          error.message;
+      }
+    }
+  );
+
+
+/* =========================
+   STARTUP
+========================= */
+
+async function startup() {
+
+  try {
+
+    const data =
+      await api(
+        "/api/me"
+      );
+
+    enterApp(
+      data.user
     );
 
-    showAuth();
+  } catch {
 
+    $("authScreen")
+      .classList.remove(
+        "hidden"
+      );
+
+    $("app")
+      .classList.add(
+        "hidden"
+      );
   }
+}
 
-})();
+startup();
