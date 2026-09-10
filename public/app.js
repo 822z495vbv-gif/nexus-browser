@@ -1007,3 +1007,7 @@ renderSaved();
 updateClearButton();
 
 searchInput.focus();
+document.body.insertAdjacentHTML(
+  "beforeend",
+  '<div style="position:fixed;bottom:10px;left:10px;z-index:99999;background:red;color:white;padding:10px;">NEXUS JS UPDATED</div>'
+);
