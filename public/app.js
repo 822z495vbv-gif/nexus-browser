@@ -1,113 +1,146 @@
-const resultsTitle = document.getElementById("resultsTitle");
-const results = document.getElementById("results");
+"use strict";
 
-const answerBox = document.getElementById("answerBox");
+/*
+|--------------------------------------------------------------------------
+| NEXUS FRONTEND
+|--------------------------------------------------------------------------
+| Clean client-side application.
+| No external JavaScript libraries.
+|--------------------------------------------------------------------------
+*/
 
-const googleFallback =
-  document.getElementById("googleFallback");
+const $ = (selector) => document.querySelector(selector);
 
-const googleLink =
-  document.getElementById("googleLink");
+const searchForm = $("#searchForm");
+const searchInput = $("#searchInput");
+const searchButton = $("#searchButton");
+const searchButtonText = $("#searchButtonText");
+const searchSpinner = $("#searchSpinner");
+const clearSearch = $("#clearSearch");
 
-const clearButton =
-  document.getElementById("clearButton");
+const searchView = $("#searchView");
+const historyView = $("#historyView");
+const savedView = $("#savedView");
 
-const themeButton =
-  document.getElementById("themeButton");
+const resultsSection = $("#resultsSection");
+const resultsCount = $("#resultsCount");
+const answerBox = $("#answerBox");
+const resultsList = $("#resultsList");
+const fallbackBox = $("#fallbackBox");
 
-const modalThemeButton =
-  document.getElementById("modalThemeButton");
+const historyList = $("#historyList");
+const savedList = $("#savedList");
 
-const menuButton =
-  document.getElementById("menuButton");
+const themeButton = $("#themeButton");
+const profileButton = $("#profileButton");
 
-const closeSidebar =
-  document.getElementById("closeSidebar");
+const profileModal = $("#profileModal");
+const settingsModal = $("#settingsModal");
 
-const sidebar =
-  document.getElementById("sidebar");
+const profileNameInput = $("#profileName");
+const profileSave = $("#profileSave");
 
-const sidebarOverlay =
-  document.getElementById("sidebarOverlay");
+const profileAvatar = $("#profileAvatar");
+const topAvatar = $("#topAvatar");
 
-const profileButton =
-  document.getElementById("profileButton");
+const appearanceSelect = $("#appearanceSelect");
+const clearHistoryButton = $("#clearHistoryButton");
 
-const topProfileButton =
-  document.getElementById("topProfileButton");
+const sidebar = $("#sidebar");
+const sidebarOverlay = $("#sidebarOverlay");
+const mobileMenuButton = $("#mobileMenuButton");
+const closeSidebarButton = $("#closeSidebarButton");
 
-const profileModal =
-  document.getElementById("profileModal");
-
-const settingsModal =
-  document.getElementById("settingsModal");
-
-const settingsButton =
-  document.getElementById("settingsButton");
-
-const profileInput =
-  document.getElementById("profileInput");
-
-const saveProfile =
-  document.getElementById("saveProfile");
-
-const profileName =
-  document.getElementById("profileName");
-
-const profileEmail =
-  document.getElementById("profileEmail");
-
-const profileAvatar =
-  document.getElementById("profileAvatar");
-
-const clearHistory =
-  document.getElementById("clearHistory");
-
-const fullHistory =
-  document.getElementById("fullHistory");
-
-const savedContainer =
-  document.getElementById("savedContainer");
-
-const searchView =
-  document.getElementById("searchView");
-
-const historyView =
-  document.getElementById("historyView");
-
-const savedView =
-  document.getElementById("savedView");
-
-const navItems =
-  document.querySelectorAll(".nav-item");
+const navButtons =
+  document.querySelectorAll("[data-view]");
 
 const suggestionButtons =
-  document.querySelectorAll(".suggestions button");
+  document.querySelectorAll(".suggestion");
 
+const STORAGE_KEYS = {
+  history: "nexus_history",
+  saved: "nexus_saved",
+  profile: "nexus_profile",
+  theme: "nexus_theme"
+};
 
-/* =========================================
-   LOCAL DATA
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| STORAGE
+|--------------------------------------------------------------------------
+*/
 
-let history = JSON.parse(
-  localStorage.getItem("nexus-history") || "[]"
+function readStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+
+    if (!raw) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    return parsed;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify(value)
+    );
+  } catch {
+    console.warn(
+      "NEXUS could not save local data."
+    );
+  }
+}
+
+let history = readStorage(
+  STORAGE_KEYS.history,
+  []
 );
 
-let profile = JSON.parse(
-  localStorage.getItem("nexus-profile") || "null"
+let saved = readStorage(
+  STORAGE_KEYS.saved,
+  []
 );
 
-let saved = JSON.parse(
-  localStorage.getItem("nexus-saved") || "[]"
+let profile = readStorage(
+  STORAGE_KEYS.profile,
+  {
+    name: "NEXUS User"
+  }
 );
 
+if (!Array.isArray(history)) {
+  history = [];
+}
 
-/* =========================================
-   HELPERS
-========================================= */
+if (!Array.isArray(saved)) {
+  saved = [];
+}
+
+if (
+  !profile ||
+  typeof profile !== "object"
+) {
+  profile = {
+    name: "NEXUS User"
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| SAFE HTML
+|--------------------------------------------------------------------------
+*/
 
 function escapeHTML(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -115,559 +148,964 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
+function safeURL(value) {
+  try {
+    const url = new URL(value);
 
-function setLoading(loading) {
-  searchButton.disabled = loading;
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:"
+    ) {
+      return "#";
+    }
 
-  if (loading) {
-    searchButtonText.classList.add("hidden");
-    spinner.classList.remove("hidden");
-  } else {
-    searchButtonText.classList.remove("hidden");
-    spinner.classList.add("hidden");
+    return url.href;
+  } catch {
+    return "#";
   }
 }
 
+/*
+|--------------------------------------------------------------------------
+| THEME
+|--------------------------------------------------------------------------
+*/
 
-function updateClearButton() {
-  if (searchInput.value.trim()) {
-    clearInput.classList.remove("hidden");
-  } else {
-    clearInput.classList.add("hidden");
-  }
-}
+function applyTheme(theme) {
+  const selected =
+    theme === "light"
+      ? "light"
+      : "dark";
 
+  document.documentElement.dataset.theme =
+    selected;
 
-function getInitial(name) {
-  return (
-    String(name || "G")
-      .trim()
-      .charAt(0)
-      .toUpperCase() || "G"
+  document.documentElement.classList.toggle(
+    "light",
+    selected === "light"
   );
+
+  writeStorage(
+    STORAGE_KEYS.theme,
+    selected
+  );
+
+  if (appearanceSelect) {
+    appearanceSelect.value =
+      selected;
+  }
+
+  if (themeButton) {
+    themeButton.textContent =
+      selected === "dark"
+        ? "☀️"
+        : "🌙";
+  }
 }
 
+applyTheme(
+  localStorage.getItem(
+    STORAGE_KEYS.theme
+  ) || "dark"
+);
 
-/* =========================================
-   PROFILE
-========================================= */
+themeButton?.addEventListener(
+  "click",
+  () => {
+    const current =
+      document.documentElement.dataset.theme;
 
-function renderProfile() {
-  const name = profile?.name || "Guest";
-  const initial = getInitial(name);
-
-  profileName.textContent = name;
-  profileEmail.textContent = "Local profile";
-
-  profileAvatar.textContent = initial;
-  topProfileButton.textContent = initial;
-}
-
-
-function openProfile() {
-  profileInput.value = profile?.name || "";
-
-  profileModal.classList.remove("hidden");
-
-  setTimeout(() => {
-    profileInput.focus();
-  }, 50);
-}
-
-
-function saveUserProfile() {
-  const name = profileInput.value.trim();
-
-  if (!name) {
-    profile = null;
-
-    localStorage.removeItem(
-      "nexus-profile"
+    applyTheme(
+      current === "dark"
+        ? "light"
+        : "dark"
     );
-  } else {
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| PROFILE
+|--------------------------------------------------------------------------
+*/
+
+function updateProfile() {
+  const name =
+    String(profile.name || "NEXUS User")
+      .trim()
+      .slice(0, 40) ||
+    "NEXUS User";
+
+  profile.name = name;
+
+  const firstLetter =
+    name.charAt(0).toUpperCase();
+
+  if (profileNameInput) {
+    profileNameInput.value =
+      name;
+  }
+
+  if (profileAvatar) {
+    profileAvatar.textContent =
+      firstLetter;
+  }
+
+  if (topAvatar) {
+    topAvatar.textContent =
+      firstLetter;
+  }
+}
+
+updateProfile();
+
+profileButton?.addEventListener(
+  "click",
+  () => {
+    updateProfile();
+    openModal(profileModal);
+  }
+);
+
+profileSave?.addEventListener(
+  "click",
+  () => {
+    const name =
+      profileNameInput?.value
+        .trim()
+        .slice(0, 40) ||
+      "NEXUS User";
+
     profile = {
       name
     };
 
-    localStorage.setItem(
-      "nexus-profile",
-      JSON.stringify(profile)
+    writeStorage(
+      STORAGE_KEYS.profile,
+      profile
     );
+
+    updateProfile();
+
+    closeModal(profileModal);
   }
-
-  renderProfile();
-
-  profileModal.classList.add("hidden");
-}
-
-
-profileButton.addEventListener(
-  "click",
-  openProfile
 );
 
-
-topProfileButton.addEventListener(
-  "click",
-  openProfile
-);
-
-
-saveProfile.addEventListener(
-  "click",
-  saveUserProfile
-);
-
-
-/* =========================================
-   MODALS
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| MODALS
+|--------------------------------------------------------------------------
+*/
 
 function openModal(modal) {
-  modal.classList.remove("hidden");
+  if (!modal) return;
+
+  modal.classList.add("open");
+
+  modal.setAttribute(
+    "aria-hidden",
+    "false"
+  );
 }
 
+function closeModal(modal) {
+  if (!modal) return;
 
-function closeModals() {
-  profileModal.classList.add("hidden");
-  settingsModal.classList.add("hidden");
+  modal.classList.remove("open");
+
+  modal.setAttribute(
+    "aria-hidden",
+    "true"
+  );
 }
-
 
 document
   .querySelectorAll("[data-close-modal]")
-  .forEach(button => {
+  .forEach((button) => {
     button.addEventListener(
       "click",
-      closeModals
+      () => {
+        closeModal(
+          button.closest(".modal")
+        );
+      }
     );
   });
-
 
 document
-  .querySelectorAll(".modal-backdrop")
-  .forEach(backdrop => {
-    backdrop.addEventListener(
+  .querySelectorAll(".modal")
+  .forEach((modal) => {
+    modal.addEventListener(
       "click",
-      closeModals
+      (event) => {
+        if (
+          event.target === modal
+        ) {
+          closeModal(modal);
+        }
+      }
     );
   });
 
+/*
+|--------------------------------------------------------------------------
+| SETTINGS
+|--------------------------------------------------------------------------
+*/
 
-settingsButton.addEventListener(
-  "click",
-  () => {
-    openModal(settingsModal);
-  }
-);
-
-
-/* =========================================
-   THEME
-========================================= */
-
-function setTheme(theme) {
-  if (theme === "light") {
-    document.body.classList.add("light");
-
-    localStorage.setItem(
-      "nexus-theme",
-      "light"
-    );
-  } else {
-    document.body.classList.remove("light");
-
-    localStorage.setItem(
-      "nexus-theme",
-      "dark"
-    );
-  }
-}
-
-
-function toggleTheme() {
-  const isLight =
-    document.body.classList.contains("light");
-
-  setTheme(
-    isLight ? "dark" : "light"
+document
+  .querySelector("[data-open-settings]")
+  ?.addEventListener(
+    "click",
+    () => {
+      openModal(settingsModal);
+    }
   );
-}
 
-
-themeButton.addEventListener(
-  "click",
-  toggleTheme
+appearanceSelect?.addEventListener(
+  "change",
+  () => {
+    applyTheme(
+      appearanceSelect.value
+    );
+  }
 );
 
-
-modalThemeButton.addEventListener(
-  "click",
-  toggleTheme
-);
-
-
-if (
-  localStorage.getItem("nexus-theme") ===
-  "light"
-) {
-  setTheme("light");
-}
-
-
-/* =========================================
-   SIDEBAR
-========================================= */
-
-function closeMenu() {
-  sidebar.classList.remove("open");
-}
-
-
-menuButton.addEventListener(
+clearHistoryButton?.addEventListener(
   "click",
   () => {
-    sidebar.classList.add("open");
-  }
-);
+    history = [];
 
-
-closeSidebar.addEventListener(
-  "click",
-  closeMenu
-);
-
-
-sidebarOverlay.addEventListener(
-  "click",
-  closeMenu
-);
-
-
-/* =========================================
-   NAVIGATION
-========================================= */
-
-function switchView(section) {
-  searchView.classList.add("hidden");
-  historyView.classList.add("hidden");
-  savedView.classList.add("hidden");
-
-  navItems.forEach(item => {
-    item.classList.remove("active");
-  });
-
-  const selected =
-    document.querySelector(
-      `[data-section="${section}"]`
+    writeStorage(
+      STORAGE_KEYS.history,
+      history
     );
 
-  if (selected) {
-    selected.classList.add("active");
+    renderHistory();
+
+    clearHistoryButton.textContent =
+      "Cleared";
+
+    setTimeout(() => {
+      clearHistoryButton.textContent =
+        "Clear History";
+    }, 1200);
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SIDEBAR
+|--------------------------------------------------------------------------
+*/
+
+function openSidebar() {
+  sidebar?.classList.add("open");
+  sidebarOverlay?.classList.add("open");
+}
+
+function closeSidebar() {
+  sidebar?.classList.remove("open");
+  sidebarOverlay?.classList.remove("open");
+}
+
+mobileMenuButton?.addEventListener(
+  "click",
+  openSidebar
+);
+
+closeSidebarButton?.addEventListener(
+  "click",
+  closeSidebar
+);
+
+sidebarOverlay?.addEventListener(
+  "click",
+  closeSidebar
+);
+
+/*
+|--------------------------------------------------------------------------
+| VIEWS
+|--------------------------------------------------------------------------
+*/
+
+function showView(view) {
+  searchView?.classList.toggle(
+    "hidden",
+    view !== "search"
+  );
+
+  historyView?.classList.toggle(
+    "hidden",
+    view !== "history"
+  );
+
+  savedView?.classList.toggle(
+    "hidden",
+    view !== "saved"
+  );
+
+  navButtons.forEach(
+    (button) => {
+      button.classList.toggle(
+        "active",
+        button.dataset.view === view
+      );
+    }
+  );
+
+  if (view === "history") {
+    renderHistory();
   }
 
-  if (section === "search") {
-    searchView.classList.remove("hidden");
-  }
-
-  if (section === "history") {
-    historyView.classList.remove("hidden");
-    renderFullHistory();
-  }
-
-  if (section === "saved") {
-    savedView.classList.remove("hidden");
+  if (view === "saved") {
     renderSaved();
   }
 
-  closeMenu();
+  closeSidebar();
 }
 
-
-navItems.forEach(item => {
-  item.addEventListener(
-    "click",
-    () => {
-      const section = item.dataset.section;
-
-      if (section) {
-        switchView(section);
+navButtons.forEach(
+  (button) => {
+    button.addEventListener(
+      "click",
+      () => {
+        showView(
+          button.dataset.view
+        );
       }
-    }
+    );
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| LOADING
+|--------------------------------------------------------------------------
+*/
+
+function setLoading(isLoading) {
+  if (searchButton) {
+    searchButton.disabled =
+      isLoading;
+  }
+
+  if (searchSpinner) {
+    searchSpinner.classList.toggle(
+      "hidden",
+      !isLoading
+    );
+  }
+
+  if (searchButtonText) {
+    searchButtonText.textContent =
+      isLoading
+        ? "Searching..."
+        : "Search";
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| HISTORY
+|--------------------------------------------------------------------------
+*/
+
+function addHistory(query) {
+  const clean =
+    String(query)
+      .trim()
+      .replace(/\s+/g, " ");
+
+  if (!clean) {
+    return;
+  }
+
+  history = history.filter(
+    (item) =>
+      item.toLowerCase() !==
+      clean.toLowerCase()
   );
-});
 
+  history.unshift(clean);
 
-/* =========================================
-   HISTORY
-========================================= */
+  history =
+    history.slice(0, 50);
 
-function saveHistory(query) {
-  history = [
-    query,
-    ...history.filter(
-      item => item !== query
-    )
-  ].slice(0, 30);
-
-  localStorage.setItem(
-    "nexus-history",
-    JSON.stringify(history)
+  writeStorage(
+    STORAGE_KEYS.history,
+    history
   );
 }
 
+function renderHistory() {
+  if (!historyList) {
+    return;
+  }
 
-function renderFullHistory() {
   if (!history.length) {
-    fullHistory.innerHTML = `
-      <div class="empty-workspace">
+    historyList.innerHTML = `
+      <div class="empty-state">
         <div class="empty-icon">◷</div>
-
         <h3>No search history</h3>
-
-        <p>
-          Searches you make will appear here.
-        </p>
+        <p>Your recent searches will appear here.</p>
       </div>
     `;
 
     return;
   }
 
-  fullHistory.innerHTML =
+  historyList.innerHTML =
     history
-      .map((query, index) => `
-        <button
-          class="history-item"
-          data-query="${escapeHTML(query)}"
-          type="button"
-        >
-          <small>
-            SEARCH
-            ${String(index + 1).padStart(2, "0")}
-          </small>
+      .map(
+        (query) => `
+          <button
+            class="history-item"
+            type="button"
+            data-history-index="${history.indexOf(query)}"
+          >
+            <span class="history-icon">⌕</span>
 
-          <strong>
-            ${escapeHTML(query)}
-          </strong>
-        </button>
-      `)
+            <span class="history-query">
+              ${escapeHTML(query)}
+            </span>
+
+            <span class="history-arrow">
+              →
+            </span>
+          </button>
+        `
+      )
       .join("");
 
-  fullHistory
-    .querySelectorAll(".history-item")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () => {
-          const query =
-            button.dataset.query;
+  historyList
+    .querySelectorAll(
+      "[data-history-index]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const index =
+              Number(
+                button.dataset
+                  .historyIndex
+              );
 
-          searchInput.value = query;
+            const query =
+              history[index];
 
-          updateClearButton();
+            if (!query) return;
 
-          switchView("search");
+            searchInput.value =
+              query;
 
-          search(query);
-        }
-      );
-    });
+            showView("search");
+
+            performSearch(query);
+          }
+        );
+      }
+    );
 }
 
-
-/* =========================================
-   SAVED SEARCHES
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| SAVED
+|--------------------------------------------------------------------------
+*/
 
 function isSaved(query) {
-  return saved.includes(query);
+  return saved.some(
+    (item) =>
+      item.toLowerCase() ===
+      query.toLowerCase()
+  );
 }
 
-
-function saveSearch(query) {
-  if (!query) return;
-
-  if (!saved.includes(query)) {
+function toggleSaved(query) {
+  if (isSaved(query)) {
+    saved = saved.filter(
+      (item) =>
+        item.toLowerCase() !==
+        query.toLowerCase()
+    );
+  } else {
     saved.unshift(query);
   }
 
   saved =
-    saved.slice(0, 30);
+    saved.slice(0, 50);
 
-  localStorage.setItem(
-    "nexus-saved",
-    JSON.stringify(saved)
+  writeStorage(
+    STORAGE_KEYS.saved,
+    saved
   );
 
   renderSaved();
-}
 
-
-function removeSavedSearch(query) {
-  saved =
-    saved.filter(
-      item => item !== query
-    );
-
-  localStorage.setItem(
-    "nexus-saved",
-    JSON.stringify(saved)
-  );
-
-  renderSaved();
-}
-
-
-function toggleSaved(query) {
-  if (isSaved(query)) {
-    removeSavedSearch(query);
-  } else {
-    saveSearch(query);
-  }
-
-  updateSaveButtons(query);
-}
-
-
-function updateSaveButtons(query) {
   document
     .querySelectorAll(
-      `[data-save-query="${CSS.escape(query)}"]`
+      ".save-result"
     )
-    .forEach(button => {
-      const savedNow =
-        isSaved(query);
-
-      button.textContent =
-        savedNow
-          ? "★ Saved"
-          : "☆ Save";
-
-      button.classList.toggle(
-        "saved",
-        savedNow
-      );
-    });
+    .forEach(
+      (button) => {
+        if (
+          button.dataset.query ===
+          query
+        ) {
+          updateSaveButton(
+            button,
+            query
+          );
+        }
+      }
+    );
 }
 
+function updateSaveButton(
+  button,
+  query
+) {
+  const state =
+    isSaved(query);
+
+  button.classList.toggle(
+    "saved",
+    state
+  );
+
+  button.textContent =
+    state
+      ? "★ Saved"
+      : "☆ Save";
+}
 
 function renderSaved() {
+  if (!savedList) {
+    return;
+  }
+
   if (!saved.length) {
-    savedContainer.innerHTML = `
-      <div class="empty-icon">☆</div>
-
-      <h3>No saved searches</h3>
-
-      <p>
-        Save searches here when you find
-        something worth keeping.
-      </p>
+    savedList.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">☆</div>
+        <h3>No saved searches</h3>
+        <p>Save searches to quickly access them later.</p>
+      </div>
     `;
 
     return;
   }
 
-  savedContainer.innerHTML =
+  savedList.innerHTML =
     saved
-      .map(query => `
-        <button
-          class="history-item"
-          data-saved="${escapeHTML(query)}"
-          type="button"
-        >
-          <small>SAVED</small>
+      .map(
+        (query, index) => `
+          <div class="saved-item">
 
-          <strong>
-            ${escapeHTML(query)}
-          </strong>
-        </button>
-      `)
+            <button
+              class="saved-open"
+              type="button"
+              data-saved-index="${index}"
+            >
+              <span class="saved-icon">
+                ★
+              </span>
+
+              <span>
+                ${escapeHTML(query)}
+              </span>
+            </button>
+
+            <button
+              class="saved-remove"
+              type="button"
+              data-remove-index="${index}"
+              aria-label="Remove saved search"
+            >
+              ×
+            </button>
+
+          </div>
+        `
+      )
       .join("");
 
-  savedContainer
-    .querySelectorAll("[data-saved]")
-    .forEach(button => {
-      button.addEventListener(
-        "click",
-        () => {
-          const query =
-            button.dataset.saved;
+  savedList
+    .querySelectorAll(
+      "[data-saved-index]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const index =
+              Number(
+                button.dataset
+                  .savedIndex
+              );
 
-          searchInput.value = query;
+            const query =
+              saved[index];
 
-          updateClearButton();
+            if (!query) return;
 
-          switchView("search");
+            searchInput.value =
+              query;
 
-          search(query);
-        }
-      );
-    });
+            showView("search");
+
+            performSearch(query);
+          }
+        );
+      }
+    );
+
+  savedList
+    .querySelectorAll(
+      "[data-remove-index]"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const index =
+              Number(
+                button.dataset
+                  .removeIndex
+              );
+
+            const query =
+              saved[index];
+
+            if (!query) return;
+
+            saved =
+              saved.filter(
+                (_, i) =>
+                  i !== index
+              );
+
+            writeStorage(
+              STORAGE_KEYS.saved,
+              saved
+            );
+
+            renderSaved();
+          }
+        );
+      }
+    );
 }
 
+/*
+|--------------------------------------------------------------------------
+| RESULTS
+|--------------------------------------------------------------------------
+*/
 
-/* =========================================
-   SEARCH
-========================================= */
-
-async function search(query) {
-  query = query.trim();
-
-  if (!query) {
-    searchInput.focus();
+function renderResults(data) {
+  if (!resultsList) {
     return;
   }
 
-  setLoading(true);
+  const results =
+    Array.isArray(data.results)
+      ? data.results
+      : [];
 
-  resultsSection.classList.remove(
-    "hidden"
-  );
+  if (resultsCount) {
+    resultsCount.textContent =
+      `${results.length} result${
+        results.length === 1
+          ? ""
+          : "s"
+      }`;
+  }
 
-  resultsTitle.textContent = query;
+  if (
+    answerBox &&
+    results.length > 0
+  ) {
+    const first =
+      results[0];
 
-  answerBox.classList.add(
-    "hidden"
-  );
-
-  googleFallback.classList.add(
-    "hidden"
-  );
-
-  results.innerHTML = `
-    <div class="ai-card">
+    answerBox.innerHTML = `
       <div class="answer-label">
-        NEXUS
+        NEXUS ANSWER
       </div>
 
-      <h3>
-        Searching the knowledge layer...
-      </h3>
+      <h2>
+        ${escapeHTML(
+          first.title ||
+          "Information found"
+        )}
+      </h2>
 
       <p>
-        Finding relevant information.
+        ${escapeHTML(
+          first.description ||
+          first.excerpt ||
+          "Information found."
+        )}
       </p>
+    `;
+
+    answerBox.classList.remove(
+      "hidden"
+    );
+  }
+
+  resultsList.innerHTML =
+    results
+      .map(
+        (result) => {
+          const title =
+            result.title ||
+            "Untitled";
+
+          const description =
+            result.description ||
+            "No description available.";
+
+          const excerpt =
+            result.excerpt ||
+            "";
+
+          const url =
+            safeURL(
+              result.url
+            );
+
+          const query =
+            String(
+              data.query || ""
+            );
+
+          const savedState =
+            isSaved(query);
+
+          return `
+            <article class="result-card">
+
+              <div class="result-top">
+
+                <div class="result-source">
+                  <span class="source-dot"></span>
+                  Wikipedia
+                </div>
+
+                <button
+                  class="save-result ${
+                    savedState
+                      ? "saved"
+                      : ""
+                  }"
+                  type="button"
+                  data-query="${escapeHTML(
+                    query
+                  )}"
+                >
+                  ${
+                    savedState
+                      ? "★ Saved"
+                      : "☆ Save"
+                  }
+                </button>
+
+              </div>
+
+              <h3>
+                ${escapeHTML(title)}
+              </h3>
+
+              <p class="result-description">
+                ${escapeHTML(
+                  description
+                )}
+              </p>
+
+              ${
+                excerpt
+                  ? `
+                    <p class="result-excerpt">
+                      ${escapeHTML(
+                        excerpt
+                      )}
+                    </p>
+                  `
+                  : ""
+              }
+
+              <div class="result-bottom">
+
+                <a
+                  class="result-link"
+                  href="${url}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open source
+                  <span>↗</span>
+                </a>
+
+              </div>
+
+            </article>
+          `;
+        }
+      )
+      .join("");
+
+  resultsList
+    .querySelectorAll(
+      ".save-result"
+    )
+    .forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const query =
+              button.dataset.query;
+
+            toggleSaved(query);
+          }
+        );
+      }
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| GOOGLE FALLBACK
+|--------------------------------------------------------------------------
+*/
+
+function renderFallback(data) {
+  if (!fallbackBox) {
+    return;
+  }
+
+  if (!data.googleURL) {
+    fallbackBox.classList.add(
+      "hidden"
+    );
+
+    return;
+  }
+
+  const url =
+    safeURL(
+      data.googleURL
+    );
+
+  fallbackBox.innerHTML = `
+    <div class="fallback-content">
+
+      <div class="fallback-icon">
+        ↗
+      </div>
+
+      <div>
+        <strong>
+          Need broader results?
+        </strong>
+
+        <p>
+          NEXUS could not find enough
+          information in its current search index.
+        </p>
+      </div>
+
+      <a
+        class="fallback-button"
+        href="${url}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Continue to Google
+        ↗
+      </a>
+
     </div>
   `;
 
-  saveHistory(query);
+  fallbackBox.classList.remove(
+    "hidden"
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| SEARCH
+|--------------------------------------------------------------------------
+*/
+
+async function performSearch(query) {
+  const cleanQuery =
+    String(query || "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  if (!cleanQuery) {
+    searchInput?.focus();
+    return;
+  }
+
+  showView("search");
+
+  addHistory(
+    cleanQuery
+  );
+
+  setLoading(true);
+
+  resultsSection?.classList.add(
+    "visible"
+  );
+
+  answerBox?.classList.add(
+    "hidden"
+  );
+
+  fallbackBox?.classList.add(
+    "hidden"
+  );
+
+  if (resultsList) {
+    resultsList.innerHTML = `
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <span>
+          Searching the NEXUS...
+        </span>
+      </div>
+    `;
+  }
 
   try {
     const response =
       await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`
+        `/api/search?q=${encodeURIComponent(
+          cleanQuery
+        )}`,
+        {
+          method: "GET",
+          headers: {
+            Accept:
+              "application/json"
+          }
+        }
       );
 
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error(
-        "The server returned an invalid response."
-      );
-    }
+    const data =
+      await response.json();
 
     if (
       !response.ok ||
@@ -679,335 +1117,225 @@ async function search(query) {
       );
     }
 
-    results.innerHTML = "";
-
     if (
       data.found &&
-      Array.isArray(data.results) &&
-      data.results.length
+      Array.isArray(
+        data.results
+      ) &&
+      data.results.length > 0
     ) {
-      const first =
-        data.results[0];
+      renderResults(data);
+    } else {
+      if (resultsCount) {
+        resultsCount.textContent =
+          "0 results";
+      }
 
-      answerBox.classList.remove(
-        "hidden"
-      );
-
-      answerBox.innerHTML = `
-        <div class="answer-label">
-          ✦ NEXUS QUICK ANSWER
-        </div>
-
-        <h3>
-          ${escapeHTML(first.title)}
-        </h3>
-
-        <p>
-          ${escapeHTML(first.excerpt)}
-        </p>
-      `;
-
-      data.results.forEach(item => {
-        const card =
-          document.createElement("div");
-
-        card.className =
-          "result-card";
-
-        const title =
-          escapeHTML(item.title);
-
-        const description =
-          escapeHTML(item.description);
-
-        const excerpt =
-          escapeHTML(item.excerpt);
-
-        const url =
-          escapeHTML(item.url);
-
-        const queryAttribute =
-          escapeHTML(query);
-
-        card.innerHTML = `
-          <a
-            href="${url}"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="result-link"
-          >
-            <h3>
-              ${title}
-            </h3>
-
-            <div class="description">
-              ${description}
-            </div>
-
-            <div class="excerpt">
-              ${excerpt}
-            </div>
-
-            <span class="result-url">
-              ${url}
-            </span>
-          </a>
-
-          <div class="result-actions">
-
-            <button
-              class="save-result"
-              data-save-query="${queryAttribute}"
-              type="button"
-            >
-              ${
-                isSaved(query)
-                  ? "★ Saved"
-                  : "☆ Save"
-              }
-            </button>
-
+      if (answerBox) {
+        answerBox.innerHTML = `
+          <div class="answer-label">
+            NO STRONG MATCH
           </div>
+
+          <h2>
+            Nothing useful was found
+          </h2>
+
+          <p>
+            NEXUS could not find a strong
+            result for
+            <strong>
+              ${escapeHTML(
+                cleanQuery
+              )}
+            </strong>.
+          </p>
         `;
 
-        const saveButton =
-          card.querySelector(".save-result");
-
-        if (isSaved(query)) {
-          saveButton.classList.add(
-            "saved"
-          );
-        }
-
-        saveButton.addEventListener(
-          "click",
-          event => {
-            event.preventDefault();
-            event.stopPropagation();
-
-            toggleSaved(query);
-          }
+        answerBox.classList.remove(
+          "hidden"
         );
+      }
 
-        results.appendChild(card);
-      });
+      if (resultsList) {
+        resultsList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">⌕</div>
 
-      googleFallback.classList.remove(
-        "hidden"
-      );
+            <h3>
+              No results found
+            </h3>
 
-      googleLink.href =
-        data.googleURL;
-    } else {
-      answerBox.classList.remove(
-        "hidden"
-      );
-
-      answerBox.innerHTML = `
-        <div class="answer-label">
-          NEXUS
-        </div>
-
-        <h3>
-          No direct answer found
-        </h3>
-
-        <p>
-          NEXUS couldn't find a useful
-          result in its current sources.
-        </p>
-      `;
-
-      googleFallback.classList.remove(
-        "hidden"
-      );
-
-      googleLink.href =
-        data.googleURL;
+            <p>
+              Try a different search query.
+            </p>
+          </div>
+        `;
+      }
     }
+
+    renderFallback(data);
+
   } catch (error) {
     console.error(
       "NEXUS search error:",
       error
     );
 
-    answerBox.classList.remove(
-      "hidden"
-    );
+    if (resultsList) {
+      resultsList.innerHTML = `
+        <div class="empty-state">
 
-    answerBox.innerHTML = `
-      <div class="answer-label">
-        NEXUS
-      </div>
+          <div class="empty-icon">
+            !
+          </div>
 
-      <h3>
-        Search temporarily unavailable
-      </h3>
+          <h3>
+            Search unavailable
+          </h3>
 
-      <p>
-        ${escapeHTML(
-          error.message ||
-          "Something went wrong."
-        )}
-      </p>
-    `;
+          <p>
+            NEXUS could not reach the search service.
+          </p>
 
-    results.innerHTML = "";
+          <button
+            id="retrySearch"
+            class="retry-button"
+            type="button"
+          >
+            Try again
+          </button>
 
-    googleFallback.classList.remove(
-      "hidden"
-    );
+        </div>
+      `;
 
-    googleLink.href =
-      `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      $("#retrySearch")?.addEventListener(
+        "click",
+        () => {
+          performSearch(
+            cleanQuery
+          );
+        }
+      );
+    }
   } finally {
     setLoading(false);
   }
 }
 
+/*
+|--------------------------------------------------------------------------
+| SEARCH EVENTS
+|--------------------------------------------------------------------------
+*/
 
-/* =========================================
-   SEARCH EVENTS
-========================================= */
-
-searchForm.addEventListener(
+searchForm?.addEventListener(
   "submit",
-  event => {
+  (event) => {
     event.preventDefault();
 
-    search(
+    performSearch(
       searchInput.value
     );
   }
 );
 
-
-searchInput.addEventListener(
-  "input",
-  updateClearButton
-);
-
-
-clearInput.addEventListener(
+clearSearch?.addEventListener(
   "click",
   () => {
     searchInput.value = "";
 
-    updateClearButton();
+    clearSearch.classList.add(
+      "hidden"
+    );
 
     searchInput.focus();
   }
 );
 
-
-clearButton.addEventListener(
-  "click",
+searchInput?.addEventListener(
+  "input",
   () => {
-    resultsSection.classList.add(
-      "hidden"
+    clearSearch?.classList.toggle(
+      "hidden",
+      !searchInput.value
     );
-
-    answerBox.classList.add(
-      "hidden"
-    );
-
-    googleFallback.classList.add(
-      "hidden"
-    );
-
-    results.innerHTML = "";
-
-    searchInput.focus();
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| SUGGESTIONS
+|--------------------------------------------------------------------------
+*/
 
 suggestionButtons.forEach(
-  button => {
+  (button) => {
     button.addEventListener(
       "click",
       () => {
         const query =
-          button.dataset.query;
+          button.dataset.query ||
+          button.textContent.trim();
 
-        searchInput.value = query;
+        searchInput.value =
+          query;
 
-        updateClearButton();
+        clearSearch?.classList.remove(
+          "hidden"
+        );
 
-        search(query);
+        performSearch(query);
       }
     );
   }
 );
 
-
-/* =========================================
-   CLEAR HISTORY
-========================================= */
-
-clearHistory.addEventListener(
-  "click",
-  () => {
-    history = [];
-
-    localStorage.removeItem(
-      "nexus-history"
-    );
-
-    renderFullHistory();
-  }
-);
-
-
-/* =========================================
-   KEYBOARD
-========================================= */
+/*
+|--------------------------------------------------------------------------
+| KEYBOARD
+|--------------------------------------------------------------------------
+*/
 
 document.addEventListener(
   "keydown",
-  event => {
+  (event) => {
 
     if (
       event.key === "/" &&
-      document.activeElement !== searchInput &&
-      !event.metaKey &&
-      !event.ctrlKey
+      document.activeElement !==
+        searchInput &&
+      document.activeElement?.tagName !==
+        "INPUT" &&
+      document.activeElement?.tagName !==
+        "TEXTAREA"
     ) {
       event.preventDefault();
 
-      searchInput.focus();
+      searchInput?.focus();
     }
 
     if (
       event.key === "Escape"
     ) {
-      closeModals();
-      closeMenu();
+      closeModal(profileModal);
+      closeModal(settingsModal);
+      closeSidebar();
     }
 
-    if (
-      event.key === "Enter" &&
-      document.activeElement === profileInput
-    ) {
-      event.preventDefault();
-
-      saveUserProfile();
-    }
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| INITIALIZE
+|--------------------------------------------------------------------------
+*/
 
-/* =========================================
-   INIT
-========================================= */
-
-renderProfile();
-renderFullHistory();
+renderHistory();
 renderSaved();
-updateClearButton();
+showView("search");
 
-searchInput.focus();
-document.body.insertAdjacentHTML(
-  "beforeend",
-  '<div style="position:fixed;bottom:10px;left:10px;z-index:99999;background:red;color:white;padding:10px;">NEXUS JS UPDATED</div>'
+console.log(
+  "NEXUS frontend loaded successfully."
 );
