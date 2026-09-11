@@ -1,42 +1,66 @@
-/* =========================
-   NEXUS APP
-========================= */
+/* =========================================================
+   NEXUS APP — STABLE FRONTEND
+   ========================================================= */
 
-const $ = id =>
-  document.getElementById(id);
+const $ = id => document.getElementById(id);
 
 let currentUser = null;
 let currentTab = "web";
 let currentQuery = "";
 let currentResults = [];
 let currentView = "search";
+
 let searchRequestId = 0;
+let aiRequestId = 0;
+let booting = false;
 
-/* =========================
+/* =========================================================
    API
-========================= */
+   ========================================================= */
 
-async function api(
-  url,
-  options = {}
-) {
-  const response =
-    await fetch(url, {
-      credentials: "same-origin",
-      cache: "no-store",
-      ...options,
-      headers: {
-        "Content-Type":
-          "application/json",
-        ...(options.headers || {})
-      }
-    });
+async function api(url, options = {}) {
+  const config = {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...options
+  };
+
+  config.headers = {
+    Accept: "application/json",
+    ...(options.headers || {})
+  };
+
+  if (
+    options.body &&
+    typeof options.body === "string" &&
+    !Object.keys(config.headers)
+      .some(key => key.toLowerCase() === "content-type")
+  ) {
+    config.headers["Content-Type"] =
+      "application/json";
+  }
+
+  let response;
+
+  try {
+    response = await fetch(
+      url,
+      config
+    );
+  } catch {
+    const error =
+      new Error(
+        "Unable to connect to NEXUS."
+      );
+
+    error.network = true;
+    throw error;
+  }
 
   let data = {};
 
   try {
-    data =
-      await response.json();
+    data = await response.json();
   } catch {
     data = {};
   }
@@ -45,7 +69,7 @@ async function api(
     const error =
       new Error(
         data.error ||
-          `Request failed (${response.status})`
+        `Request failed (${response.status})`
       );
 
     error.status =
@@ -57,9 +81,9 @@ async function api(
   return data;
 }
 
-/* =========================
-   HTML SAFETY
-========================= */
+/* =========================================================
+   HTML / URL SAFETY
+   ========================================================= */
 
 function escapeHTML(value) {
   return String(value ?? "")
@@ -90,9 +114,9 @@ function safeURL(value) {
   }
 }
 
-/* =========================
-   AUTH
-========================= */
+/* =========================================================
+   AUTH UI
+   ========================================================= */
 
 function showLogin() {
   $("loginBox")?.classList.remove(
@@ -114,8 +138,48 @@ function showRegister() {
   );
 }
 
+function updateAccountUI() {
+  if (!currentUser) {
+    return;
+  }
+
+  const username =
+    String(
+      currentUser.username || "U"
+    );
+
+  const initial =
+    username
+      .charAt(0)
+      .toUpperCase();
+
+  [
+    "profileInitial",
+    "accountInitial",
+    "accountAvatar"
+  ].forEach(id => {
+    if ($(id)) {
+      $(id).textContent =
+        initial;
+    }
+  });
+
+  [
+    "accountName",
+    "accountName2",
+    "accountMenuName",
+    "settingsAccount"
+  ].forEach(id => {
+    if ($(id)) {
+      $(id).textContent =
+        username;
+    }
+  });
+}
+
 function enterApp(user) {
-  currentUser = user;
+  currentUser =
+    user || null;
 
   $("authScreen")?.classList.add(
     "hidden"
@@ -128,75 +192,21 @@ function enterApp(user) {
   updateAccountUI();
 
   if (
-    user?.isAdmin &&
-    $("adminNav")
+    currentUser?.isAdmin
   ) {
-    $("adminNav").classList.remove(
+    $("adminNav")?.classList.remove(
+      "hidden"
+    );
+  } else {
+    $("adminNav")?.classList.add(
       "hidden"
     );
   }
-
-  if (
-    !user?.isAdmin &&
-    $("adminNav")
-  ) {
-    $("adminNav").classList.add(
-      "hidden"
-    );
-  }
-
-  switchView("search");
 }
 
-function updateAccountUI() {
-  if (!currentUser) {
-    return;
-  }
-
-  const initial =
-    currentUser.username
-      .charAt(0)
-      .toUpperCase();
-
-  if ($("profileInitial")) {
-    $("profileInitial").textContent =
-      initial;
-  }
-
-  if ($("accountInitial")) {
-    $("accountInitial").textContent =
-      initial;
-  }
-
-  if ($("accountAvatar")) {
-    $("accountAvatar").textContent =
-      initial;
-  }
-
-  if ($("accountName")) {
-    $("accountName").textContent =
-      currentUser.username;
-  }
-
-  if ($("accountName2")) {
-    $("accountName2").textContent =
-      currentUser.username;
-  }
-
-  if ($("accountMenuName")) {
-    $("accountMenuName").textContent =
-      currentUser.username;
-  }
-
-  if ($("settingsAccount")) {
-    $("settingsAccount").textContent =
-      currentUser.username;
-  }
-}
-
-/* =========================
+/* =========================================================
    LOGIN
-========================= */
+   ========================================================= */
 
 $("loginForm")?.addEventListener(
   "submit",
@@ -204,20 +214,44 @@ $("loginForm")?.addEventListener(
     event.preventDefault();
 
     const username =
-      $("loginUsername")?.value.trim();
+      $("loginUsername")
+        ?.value
+        .trim() || "";
 
     const password =
-      $("loginPassword")?.value || "";
+      $("loginPassword")
+        ?.value || "";
 
     const errorBox =
       $("loginError");
 
     if (errorBox) {
-      errorBox.textContent = "";
+      errorBox.textContent =
+        "";
     }
 
-    if ($("loginBtn")) {
-      $("loginBtn").disabled = true;
+    if (!username) {
+      if (errorBox) {
+        errorBox.textContent =
+          "Enter your username.";
+      }
+      return;
+    }
+
+    if (!password) {
+      if (errorBox) {
+        errorBox.textContent =
+          "Enter your password.";
+      }
+      return;
+    }
+
+    const button =
+      $("loginBtn");
+
+    if (button) {
+      button.disabled =
+        true;
     }
 
     try {
@@ -226,31 +260,41 @@ $("loginForm")?.addEventListener(
           "/api/login",
           {
             method: "POST",
-            body: JSON.stringify({
-              username,
-              password
-            })
+            body:
+              JSON.stringify({
+                username,
+                password
+              })
           }
         );
 
-      enterApp(data.user);
+      enterApp(
+        data.user
+      );
+
+      if ($("loginPassword")) {
+        $("loginPassword").value =
+          "";
+      }
+
+      await restoreURLState();
     } catch (error) {
       if (errorBox) {
         errorBox.textContent =
           error.message;
       }
     } finally {
-      if ($("loginBtn")) {
-        $("loginBtn").disabled =
+      if (button) {
+        button.disabled =
           false;
       }
     }
   }
 );
 
-/* =========================
+/* =========================================================
    REGISTER
-========================= */
+   ========================================================= */
 
 $("registerForm")?.addEventListener(
   "submit",
@@ -258,24 +302,27 @@ $("registerForm")?.addEventListener(
     event.preventDefault();
 
     const username =
-      $("registerUsername")?.value.trim();
+      $("registerUsername")
+        ?.value
+        .trim() || "";
 
     const password =
-      $("registerPassword")?.value || "";
+      $("registerPassword")
+        ?.value || "";
 
     const confirm =
-      $("confirmPassword")?.value || "";
+      $("confirmPassword")
+        ?.value || "";
 
     const errorBox =
       $("registerError");
 
     if (errorBox) {
-      errorBox.textContent = "";
+      errorBox.textContent =
+        "";
     }
 
-    if (
-      password !== confirm
-    ) {
+    if (password !== confirm) {
       if (errorBox) {
         errorBox.textContent =
           "Passwords do not match.";
@@ -284,8 +331,11 @@ $("registerForm")?.addEventListener(
       return;
     }
 
-    if ($("registerBtn")) {
-      $("registerBtn").disabled =
+    const button =
+      $("registerBtn");
+
+    if (button) {
+      button.disabled =
         true;
     }
 
@@ -295,31 +345,44 @@ $("registerForm")?.addEventListener(
           "/api/register",
           {
             method: "POST",
-            body: JSON.stringify({
-              username,
-              password
-            })
+            body:
+              JSON.stringify({
+                username,
+                password
+              })
           }
         );
 
-      enterApp(data.user);
+      enterApp(
+        data.user
+      );
+
+      if ($("registerPassword")) {
+        $("registerPassword").value =
+          "";
+      }
+
+      if ($("confirmPassword")) {
+        $("confirmPassword").value =
+          "";
+      }
     } catch (error) {
       if (errorBox) {
         errorBox.textContent =
           error.message;
       }
     } finally {
-      if ($("registerBtn")) {
-        $("registerBtn").disabled =
+      if (button) {
+        button.disabled =
           false;
       }
     }
   }
 );
 
-/* =========================
+/* =========================================================
    PASSWORD STRENGTH
-========================= */
+   ========================================================= */
 
 $("registerPassword")?.addEventListener(
   "input",
@@ -349,18 +412,22 @@ $("registerPassword")?.addEventListener(
       score++;
     }
 
-    if (/[^A-Za-z0-9]/.test(password)) {
+    if (
+      /[^A-Za-z0-9]/.test(
+        password
+      )
+    ) {
       score++;
     }
 
     const labels = [
+      "",
       "Too weak",
       "Weak",
       "Fair",
       "Good",
       "Strong",
-      "Very strong",
-      "Excellent"
+      "Very strong"
     ];
 
     if ($("strengthText")) {
@@ -382,9 +449,9 @@ $("registerPassword")?.addEventListener(
   }
 );
 
-/* =========================
+/* =========================================================
    AUTH TOGGLES
-========================= */
+   ========================================================= */
 
 $("showRegister")?.addEventListener(
   "click",
@@ -402,12 +469,32 @@ $("showLogin")?.addEventListener(
   }
 );
 
-/* =========================
+/* =========================================================
    VIEW SYSTEM
-========================= */
+   ========================================================= */
 
 function switchView(view) {
-  currentView = view;
+  const allowed = [
+    "search",
+    "history",
+    "saved",
+    "settings",
+    "admin"
+  ];
+
+  if (!allowed.includes(view)) {
+    view = "search";
+  }
+
+  if (
+    view === "admin" &&
+    !currentUser?.isAdmin
+  ) {
+    view = "search";
+  }
+
+  currentView =
+    view;
 
   const views = {
     search: "searchView",
@@ -417,22 +504,23 @@ function switchView(view) {
     admin: "adminView"
   };
 
-  Object.entries(views)
-    .forEach(
-      ([key, id]) => {
-        const element =
-          $(id);
+  Object.entries(
+    views
+  ).forEach(
+    ([name, id]) => {
+      const element =
+        $(id);
 
-        if (!element) {
-          return;
-        }
-
-        element.classList.toggle(
-          "hidden",
-          key !== view
-        );
+      if (!element) {
+        return;
       }
-    );
+
+      element.classList.toggle(
+        "hidden",
+        name !== view
+      );
+    }
+  );
 
   if (view === "history") {
     loadHistory();
@@ -450,14 +538,47 @@ function switchView(view) {
   closeAccountMenu();
 }
 
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+
 $("adminNav")?.addEventListener(
   "click",
-  () => switchView("admin")
+  () => {
+    switchView("admin");
+  }
 );
 
-/* =========================
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        "[data-view]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    const view =
+      button.dataset.view;
+
+    if (!view) {
+      return;
+    }
+
+    event.preventDefault();
+
+    switchView(
+      view
+    );
+  }
+);
+
+/* =========================================================
    SIDEBAR
-========================= */
+   ========================================================= */
 
 function openSidebar() {
   $("sidebar")?.classList.add(
@@ -489,9 +610,9 @@ $("overlay")?.addEventListener(
   closeSidebar
 );
 
-/* =========================
+/* =========================================================
    ACCOUNT MENU
-========================= */
+   ========================================================= */
 
 function closeAccountMenu() {
   $("accountMenu")?.classList.remove(
@@ -513,116 +634,71 @@ $("profileBtn")?.addEventListener(
 document.addEventListener(
   "click",
   event => {
+    const menu =
+      $("accountMenu");
+
+    const button =
+      $("profileBtn");
+
     if (
-      !$("accountMenu")?.contains(
+      !menu ||
+      !button
+    ) {
+      return;
+    }
+
+    if (
+      !menu.contains(
         event.target
       ) &&
-      event.target !==
-        $("profileBtn")
+      !button.contains(
+        event.target
+      )
     ) {
       closeAccountMenu();
     }
   }
 );
 
-/* =========================
-   NAV BUTTONS
-========================= */
-
-$("historyList")?.addEventListener(
-  "click",
-  event => {
-    const button =
-      event.target.closest(
-        "[data-history-query]"
-      );
-
-    if (!button) {
-      return;
-    }
-
-    const query =
-      button.dataset.historyQuery;
-
-    if (!query) {
-      return;
-    }
-
-    switchView("search");
-
-    $("searchInput").value =
-      query;
-
-    performSearch(query);
-  }
-);
-
-document.querySelectorAll(
-  "[data-view]"
-).forEach(
-  element => {
-    element.addEventListener(
-      "click",
-      () => {
-        const view =
-          element.dataset.view;
-
-        if (view) {
-          switchView(view);
-        }
-      }
-    );
-  }
-);
-
-/* =========================
+/* =========================================================
    SEARCH TABS
-========================= */
+   ========================================================= */
 
-function activateTab(tabElement) {
-  if (!tabElement) {
-    return;
+function setActiveTab(
+  tab
+) {
+  const validTabs = [
+    "web",
+    "news",
+    "images",
+    "videos",
+    "ai"
+  ];
+
+  if (
+    !validTabs.includes(
+      tab
+    )
+  ) {
+    tab = "web";
   }
 
-  const tab =
-    tabElement.dataset.tab;
-
-  if (!tab) {
-    return;
-  }
-
-  currentTab = tab;
+  currentTab =
+    tab;
 
   document
     .querySelectorAll(
       "#searchTabs .tab"
     )
-    .forEach(button => {
-      button.classList.toggle(
-        "active",
-        button.dataset.tab ===
-          currentTab
-      );
-    });
-
-  const query =
-    $("searchInput")?.value.trim();
-
-  if (currentTab === "ai") {
-    if (query) {
-      renderAI(query);
-    } else {
-      renderAIWelcome();
-    }
-
-    return;
-  }
-
-  if (query) {
-    performSearch(query);
-  } else {
-    renderSearchStart();
-  }
+    .forEach(
+      button => {
+        button.classList.toggle(
+          "active",
+          button.dataset.tab ===
+            currentTab
+        );
+      }
+    );
 }
 
 document.addEventListener(
@@ -638,16 +714,41 @@ document.addEventListener(
     }
 
     event.preventDefault();
-    event.stopPropagation();
 
-    activateTab(tab);
-  },
-  true
+    const selected =
+      tab.dataset.tab;
+
+    setActiveTab(
+      selected
+    );
+
+    const query =
+      $("searchInput")
+        ?.value
+        .trim() || "";
+
+    if (!query) {
+      if (
+        currentTab ===
+        "ai"
+      ) {
+        renderAIWelcome();
+      } else {
+        renderSearchStart();
+      }
+
+      return;
+    }
+
+    performSearch(
+      query
+    );
+  }
 );
 
-/* =========================
+/* =========================================================
    SEARCH FORM
-========================= */
+   ========================================================= */
 
 $("searchForm")?.addEventListener(
   "submit",
@@ -655,13 +756,17 @@ $("searchForm")?.addEventListener(
     event.preventDefault();
 
     const query =
-      $("searchInput")?.value.trim();
+      $("searchInput")
+        ?.value
+        .trim() || "";
 
     if (!query) {
       return;
     }
 
-    await performSearch(query);
+    await performSearch(
+      query
+    );
   }
 );
 
@@ -669,51 +774,81 @@ $("clearBtn")?.addEventListener(
   "click",
   () => {
     if ($("searchInput")) {
-      $("searchInput").value = "";
+      $("searchInput").value =
+        "";
+
       $("searchInput").focus();
     }
 
-    if ($("suggestions")) {
-      $("suggestions").innerHTML = "";
-      $("suggestions").classList.add(
+    $("suggestions")
+      ?.classList.add(
         "hidden"
       );
-    }
+
+    searchRequestId++;
+    aiRequestId++;
+
+    currentQuery =
+      "";
+
+    currentResults =
+      [];
 
     renderSearchStart();
+
+    replaceBrowserState(
+      "/"
+    );
   }
 );
 
-/* =========================
+/* =========================================================
    SUGGESTIONS
-========================= */
+   ========================================================= */
+
+let suggestionTimer =
+  null;
 
 $("searchInput")?.addEventListener(
   "input",
   () => {
     const value =
-      $("searchInput").value.trim();
+      $("searchInput")
+        .value
+        .trim();
 
-    if ($("clearBtn")) {
-      $("clearBtn").classList.toggle(
+    $("clearBtn")
+      ?.classList.toggle(
         "hidden",
         !value
       );
-    }
 
     if (!value) {
-      $("suggestions")?.classList.add(
-        "hidden"
-      );
+      $("suggestions")
+        ?.classList.add(
+          "hidden"
+        );
 
       return;
     }
 
-    showSuggestions(value);
+    clearTimeout(
+      suggestionTimer
+    );
+
+    suggestionTimer =
+      setTimeout(
+        () => {
+          showSuggestions(
+            value
+          );
+        },
+        100
+      );
   }
 );
 
-async function showSuggestions(
+function showSuggestions(
   query
 ) {
   const box =
@@ -741,7 +876,9 @@ async function showSuggestions(
               item
             )}"
           >
-            ${escapeHTML(item)}
+            ${escapeHTML(
+              item
+            )}
           </button>
         `
       )
@@ -764,84 +901,108 @@ document.addEventListener(
       return;
     }
 
+    event.preventDefault();
+
     const value =
-      button.dataset.suggestion;
+      button.dataset
+        .suggestion || "";
 
     if ($("searchInput")) {
       $("searchInput").value =
         value;
     }
 
-    $("suggestions")?.classList.add(
-      "hidden"
-    );
+    $("suggestions")
+      ?.classList.add(
+        "hidden"
+      );
 
-    performSearch(value);
+    performSearch(
+      value
+    );
   }
 );
 
-/* =========================
-   SEARCH ROUTER
-========================= */
+/* =========================================================
+   SEARCH
+   ========================================================= */
 
 async function performSearch(
   query
 ) {
   query =
-    String(query || "").trim();
+    String(
+      query || ""
+    ).trim();
 
   if (!query) {
     return;
   }
 
-  currentQuery = query;
+  currentQuery =
+    query;
 
   if ($("searchInput")) {
     $("searchInput").value =
       query;
   }
 
-  if ($("suggestions")) {
-    $("suggestions").classList.add(
+  $("suggestions")
+    ?.classList.add(
       "hidden"
     );
-  }
 
-  if ($("clearBtn")) {
-    $("clearBtn").classList.remove(
+  $("clearBtn")
+    ?.classList.remove(
       "hidden"
     );
+
+  if (
+    currentTab ===
+    "ai"
+  ) {
+    await renderAI(
+      query
+    );
+
+    return;
   }
 
   const requestId =
     ++searchRequestId;
 
-  setLoading(true);
+  setLoading(
+    true
+  );
+
+  let endpoint =
+    "/api/search";
+
+  if (
+    currentTab ===
+    "news"
+  ) {
+    endpoint =
+      "/api/news";
+  }
+
+  if (
+    currentTab ===
+    "images"
+  ) {
+    endpoint =
+      "/api/images";
+  }
+
+  if (
+    currentTab ===
+    "videos"
+  ) {
+    endpoint =
+      "/api/videos";
+  }
 
   try {
-    if (currentTab === "ai") {
-      await renderAI(query);
-      return;
-    }
-
-    let endpoint =
-      "/api/search";
-
-    if (currentTab === "news") {
-      endpoint =
-        "/api/news";
-    }
-
-    if (currentTab === "images") {
-      endpoint =
-        "/api/images";
-    }
-
-    if (currentTab === "videos") {
-      endpoint =
-        "/api/videos";
-    }
-
     const data =
       await api(
         `${endpoint}?q=${encodeURIComponent(
@@ -857,23 +1018,37 @@ async function performSearch(
     }
 
     currentResults =
-      data.results || [];
+      Array.isArray(
+        data.results
+      )
+        ? data.results
+        : [];
 
     renderResults(
       currentResults,
       query
     );
 
-    updateBrowserState(
-      query,
-      currentTab,
-      currentResults
+    replaceBrowserState(
+      `?q=${encodeURIComponent(
+        query
+      )}&tab=${encodeURIComponent(
+        currentTab
+      )}`
     );
   } catch (error) {
     if (
-      error.status === 401
+      requestId !==
+      searchRequestId
     ) {
-      await boot();
+      return;
+    }
+
+    if (
+      error.status ===
+      401
+    ) {
+      await handleSessionExpired();
       return;
     }
 
@@ -885,22 +1060,25 @@ async function performSearch(
       requestId ===
       searchRequestId
     ) {
-      setLoading(false);
+      setLoading(
+        false
+      );
     }
   }
 }
 
-/* =========================
+/* =========================================================
    LOADING
-========================= */
+   ========================================================= */
 
 function setLoading(
   loading
 ) {
-  $("spinner")?.classList.toggle(
-    "hidden",
-    !loading
-  );
+  $("spinner")
+    ?.classList.toggle(
+      "hidden",
+      !loading
+    );
 
   if ($("searchText")) {
     $("searchText").textContent =
@@ -913,38 +1091,50 @@ function setLoading(
 function getSearchLabel() {
   if (
     currentTab ===
-    "web"
+    "ai"
   ) {
-    return currentQuery
-      ? `Results for "${currentQuery}"`
-      : "Search the web";
+    return "NEXUS AI";
   }
 
-  return currentQuery
-    ? `${
-        currentTab
-          .charAt(0)
-          .toUpperCase() +
-        currentTab.slice(1)
-      } results for "${currentQuery}"`
-    : `${
-        currentTab
-          .charAt(0)
-          .toUpperCase() +
-        currentTab.slice(1)
-      } search`;
+  if (!currentQuery) {
+    if (
+      currentTab ===
+      "web"
+    ) {
+      return "Search the web";
+    }
+
+    return `${
+      currentTab
+        .charAt(0)
+        .toUpperCase() +
+      currentTab.slice(1)
+    } search`;
+  }
+
+  if (
+    currentTab ===
+    "web"
+  ) {
+    return `Results for "${currentQuery}"`;
+  }
+
+  return `${
+    currentTab
+      .charAt(0)
+      .toUpperCase() +
+    currentTab.slice(1)
+  } results for "${currentQuery}"`;
 }
 
-/* =========================
-   SEARCH START
-========================= */
+/* =========================================================
+   START STATES
+   ========================================================= */
 
 function renderSearchStart() {
-  currentQuery = "";
-
   if ($("searchText")) {
     $("searchText").textContent =
-      getSearchLabel();
+      "Search the web";
   }
 
   if ($("results")) {
@@ -981,15 +1171,16 @@ function renderAIWelcome() {
   }
 }
 
-/* =========================
-   RESULT RENDERER
-========================= */
+/* =========================================================
+   RESULT RENDERING
+   ========================================================= */
 
 function renderResults(
   results,
   query
 ) {
-  currentQuery = query;
+  currentQuery =
+    query;
 
   if ($("searchText")) {
     $("searchText").textContent =
@@ -1006,7 +1197,9 @@ function renderResults(
         <h2>No results found</h2>
         <p>
           NEXUS couldn't find anything
-          for "${escapeHTML(query)}".
+          for "${escapeHTML(
+            query
+          )}".
         </p>
       </div>
     `;
@@ -1052,97 +1245,107 @@ function renderResults(
   );
 }
 
-/* =========================
-   WEB RESULTS
-========================= */
+/* =========================================================
+   WEB
+   ========================================================= */
 
 function renderWeb(
   results
 ) {
-  $("results").innerHTML =
-    `
-      <div class="results-list">
-        ${results
-          .map(result => {
-            const url =
-              safeURL(
-                result.url
-              );
+  const html =
+    results
+      .map(
+        result => {
+          const url =
+            safeURL(
+              result.url
+            );
 
-            if (!url) {
-              return "";
-            }
+          if (!url) {
+            return "";
+          }
 
-            return `
-              <article class="search-result">
-                <div class="result-source">
-                  ${escapeHTML(
-                    result.source ||
-                      "Web"
-                  )}
-                </div>
+          return `
+            <article class="search-result">
+              <div class="result-source">
+                ${escapeHTML(
+                  result.source ||
+                    "Web"
+                )}
+              </div>
 
+              <a
+                class="result-title"
+                href="${escapeHTML(
+                  url
+                )}"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                ${escapeHTML(
+                  result.title ||
+                    "Untitled result"
+                )}
+              </a>
+
+              <p class="result-description">
+                ${escapeHTML(
+                  result.description ||
+                    "No description available."
+                )}
+              </p>
+
+              <div class="result-actions">
                 <a
-                  class="result-title"
+                  class="result-open"
                   href="${escapeHTML(
                     url
                   )}"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                  ${escapeHTML(
-                    result.title
-                  )}
+                  Open source
                 </a>
 
-                <p class="result-description">
-                  ${escapeHTML(
-                    result.description ||
-                      "No description available."
-                  )}
-                </p>
+                <button
+                  type="button"
+                  class="save-result"
+                  data-save-title="${escapeHTML(
+                    result.title ||
+                      "Untitled result"
+                  )}"
+                  data-save-url="${escapeHTML(
+                    url
+                  )}"
+                >
+                  Save
+                </button>
+              </div>
+            </article>
+          `;
+        }
+      )
+      .join("");
 
-                <div class="result-actions">
-                  <a
-                    class="result-open"
-                    href="${escapeHTML(
-                      url
-                    )}"
-                  >
-                    Open source
-                  </a>
-
-                  <button
-                    type="button"
-                    class="save-result"
-                    data-save-title="${escapeHTML(
-                      result.title
-                    )}"
-                    data-save-url="${escapeHTML(
-                      url
-                    )}"
-                  >
-                    Save
-                  </button>
-                </div>
-              </article>
-            `;
-          })
-          .join("")}
-      </div>
-    `;
+  $("results").innerHTML = `
+    <div class="results-list">
+      ${html}
+    </div>
+  `;
 }
 
-/* =========================
+/* =========================================================
    NEWS
-========================= */
+   ========================================================= */
 
 function renderNews(
   results
 ) {
-  $("results").innerHTML =
-    `
-      <div class="results-list">
-        ${results
-          .map(result => {
+  $("results").innerHTML = `
+    <div class="results-list">
+      ${results
+        .map(
+          result => {
             const url =
               safeURL(
                 result.url
@@ -1186,9 +1389,12 @@ function renderNews(
                   href="${escapeHTML(
                     url
                   )}"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   ${escapeHTML(
-                    result.title
+                    result.title ||
+                      "News article"
                   )}
                 </a>
 
@@ -1205,6 +1411,8 @@ function renderNews(
                     href="${escapeHTML(
                       url
                     )}"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
                     Read article
                   </a>
@@ -1213,7 +1421,8 @@ function renderNews(
                     type="button"
                     class="save-result"
                     data-save-title="${escapeHTML(
-                      result.title
+                      result.title ||
+                        "News article"
                     )}"
                     data-save-url="${escapeHTML(
                       url
@@ -1224,24 +1433,25 @@ function renderNews(
                 </div>
               </article>
             `;
-          })
-          .join("")}
-      </div>
-    `;
+          }
+        )
+        .join("")}
+    </div>
+  `;
 }
 
-/* =========================
+/* =========================================================
    IMAGES
-========================= */
+   ========================================================= */
 
 function renderImages(
   results
 ) {
-  $("results").innerHTML =
-    `
-      <div class="image-grid">
-        ${results
-          .map(result => {
+  $("results").innerHTML = `
+    <div class="image-grid">
+      ${results
+        .map(
+          result => {
             const image =
               safeURL(
                 result.url
@@ -1264,13 +1474,16 @@ function renderImages(
                       image
                   )}"
                   class="image-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   <img
                     src="${escapeHTML(
                       image
                     )}"
                     alt="${escapeHTML(
-                      result.title
+                      result.title ||
+                        "Image"
                     )}"
                     loading="lazy"
                   >
@@ -1279,7 +1492,8 @@ function renderImages(
                 <div class="image-card-info">
                   <div class="image-card-title">
                     ${escapeHTML(
-                      result.title
+                      result.title ||
+                        "Image"
                     )}
                   </div>
 
@@ -1304,6 +1518,8 @@ function renderImages(
                             href="${escapeHTML(
                               source
                             )}"
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
                             Source
                           </a>
@@ -1315,7 +1531,8 @@ function renderImages(
                       type="button"
                       class="save-result"
                       data-save-title="${escapeHTML(
-                        result.title
+                        result.title ||
+                          "Image"
                       )}"
                       data-save-url="${escapeHTML(
                         source ||
@@ -1328,24 +1545,25 @@ function renderImages(
                 </div>
               </article>
             `;
-          })
-          .join("")}
-      </div>
-    `;
+          }
+        )
+        .join("")}
+    </div>
+  `;
 }
 
-/* =========================
+/* =========================================================
    VIDEOS
-========================= */
+   ========================================================= */
 
 function renderVideos(
   results
 ) {
-  $("results").innerHTML =
-    `
-      <div class="video-grid">
-        ${results
-          .map(result => {
+  $("results").innerHTML = `
+    <div class="video-grid">
+      ${results
+        .map(
+          result => {
             const video =
               safeURL(
                 result.url
@@ -1385,10 +1603,13 @@ function renderVideos(
                       src="${escapeHTML(
                         video
                       )}"
-                      type="${escapeHTML(
-                        result.mime ||
-                          ""
-                      )}"
+                      ${
+                        result.mime
+                          ? `type="${escapeHTML(
+                              result.mime
+                            )}"`
+                          : ""
+                      }
                     >
                     Your browser cannot play
                     this video.
@@ -1398,7 +1619,8 @@ function renderVideos(
                 <div class="video-info">
                   <h3>
                     ${escapeHTML(
-                      result.title
+                      result.title ||
+                        "Video"
                     )}
                   </h3>
 
@@ -1411,6 +1633,8 @@ function renderVideos(
                             href="${escapeHTML(
                               source
                             )}"
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
                             Source
                           </a>
@@ -1422,7 +1646,8 @@ function renderVideos(
                       type="button"
                       class="save-result"
                       data-save-title="${escapeHTML(
-                        result.title
+                        result.title ||
+                          "Video"
                       )}"
                       data-save-url="${escapeHTML(
                         source ||
@@ -1435,47 +1660,54 @@ function renderVideos(
                 </div>
               </article>
             `;
-          })
-          .join("")}
-      </div>
+          }
+        )
+        .join("")}
+    </div>
 
-      <div class="video-note">
-        NEXUS plays videos when the source
-        provides a directly playable media file.
-        Some websites don't allow embedded playback.
-      </div>
-    `;
+    <div class="video-note">
+      Some websites do not allow direct
+      embedded playback. NEXUS can play
+      supported direct media files.
+    </div>
+  `;
 }
 
-/* =========================
+/* =========================================================
    AI
-========================= */
+   ========================================================= */
 
 async function renderAI(
   query
 ) {
-  currentQuery =
-    String(query || "").trim();
+  query =
+    String(
+      query || ""
+    ).trim();
 
-  if (!currentQuery) {
+  if (!query) {
     renderAIWelcome();
     return;
   }
 
-  if ($("searchText")) {
-    $("searchText").textContent =
-      "NEXUS AI";
-  }
+  currentQuery =
+    query;
 
-  if ($("results")) {
-    $("results").innerHTML = `
-      <div class="ai-loading">
-        <div class="ai-loading-icon">✦</div>
-        <h2>Thinking...</h2>
-        <p>NEXUS AI is generating a response.</p>
-      </div>
-    `;
-  }
+  const requestId =
+    ++aiRequestId;
+
+  $("searchText").textContent =
+    "NEXUS AI";
+
+  $("results").innerHTML = `
+    <div class="ai-loading">
+      <div class="ai-loading-icon">✦</div>
+      <h2>Thinking...</h2>
+      <p>
+        NEXUS AI is generating a response.
+      </p>
+    </div>
+  `;
 
   try {
     const data =
@@ -1483,51 +1715,86 @@ async function renderAI(
         "/api/ai",
         {
           method: "POST",
-          body: JSON.stringify({
-            query:
-              currentQuery
-          })
+          body:
+            JSON.stringify({
+              query
+            })
         }
       );
+
+    if (
+      requestId !==
+      aiRequestId
+    ) {
+      return;
+    }
+
+    /*
+      If the user switched tabs
+      while AI was thinking, don't
+      overwrite the new tab.
+    */
+
+    if (
+      currentTab !==
+      "ai"
+    ) {
+      return;
+    }
 
     const answer =
       data.answer ||
       "I couldn't generate an answer.";
 
-    if ($("results")) {
-      $("results").innerHTML = `
-        <article class="ai-result">
-          <div class="ai-result-header">
-            <span class="ai-badge">✦ NEXUS AI</span>
-          </div>
+    $("results").innerHTML = `
+      <article class="ai-result">
+        <div class="ai-result-header">
+          <span class="ai-badge">
+            ✦ NEXUS AI
+          </span>
+        </div>
 
-          <div class="ai-answer">
-            ${formatAIAnswer(
-              answer
-            )}
-          </div>
+        <div class="ai-answer">
+          ${formatAIAnswer(
+            answer
+          )}
+        </div>
 
-          ${
-            data.model
-              ? `
-                <div class="ai-model">
-                  ${escapeHTML(
-                    data.model
-                  )}
-                </div>
-              `
-              : ""
-          }
-        </article>
-      `;
-    }
+        ${
+          data.model
+            ? `
+              <div class="ai-model">
+                ${escapeHTML(
+                  data.model
+                )}
+              </div>
+            `
+            : ""
+        }
+      </article>
+    `;
 
-    updateBrowserState(
-      currentQuery,
-      "ai",
-      []
+    replaceBrowserState(
+      `?q=${encodeURIComponent(
+        query
+      )}&tab=ai`
     );
   } catch (error) {
+    if (
+      requestId !==
+      aiRequestId
+    ) {
+      return;
+    }
+
+    if (
+      error.status ===
+      401
+    ) {
+      await handleSessionExpired();
+      return;
+    }
+
     renderError(
       error.message
     );
@@ -1537,63 +1804,125 @@ async function renderAI(
 function formatAIAnswer(
   text
 ) {
+  const escaped =
+    escapeHTML(
+      text
+    );
+
+  const lines =
+    escaped.split("\n");
+
   let html =
-    escapeHTML(text);
+    "";
+
+  let inList =
+    false;
+
+  for (
+    const rawLine of lines
+  ) {
+    const line =
+      rawLine.trim();
+
+    if (!line) {
+      if (inList) {
+        html +=
+          "</ul>";
+
+        inList =
+          false;
+      }
+
+      html +=
+        "<br>";
+
+      continue;
+    }
+
+    const heading =
+      line.match(
+        /^#{1,3}\s+(.+)$/
+      );
+
+    if (heading) {
+      if (inList) {
+        html +=
+          "</ul>";
+
+        inList =
+          false;
+      }
+
+      html += `
+        <h3>
+          ${heading[1]}
+        </h3>
+      `;
+
+      continue;
+    }
+
+    const bullet =
+      line.match(
+        /^[-•*]\s+(.+)$/
+      );
+
+    if (bullet) {
+      if (!inList) {
+        html +=
+          "<ul>";
+
+        inList =
+          true;
+      }
+
+      html += `
+        <li>
+          ${bullet[1]}
+        </li>
+      `;
+
+      continue;
+    }
+
+    if (inList) {
+      html +=
+        "</ul>";
+
+      inList =
+        false;
+    }
+
+    html += `
+      <p>
+        ${line}
+      </p>
+    `;
+  }
+
+  if (inList) {
+    html +=
+      "</ul>";
+  }
 
   html =
     html.replace(
-      /\*\*(.*?)\*\*/g,
+      /\*\*(.+?)\*\*/g,
       "<strong>$1</strong>"
     );
 
   html =
     html.replace(
-      /^### (.*)$/gm,
-      "<h3>$1</h3>"
+      /`([^`]+)`/g,
+      "<code>$1</code>"
     );
 
-  html =
-    html.replace(
-      /^## (.*)$/gm,
-      "<h2>$1</h2>"
-    );
-
-  html =
-    html.replace(
-      /^# (.*)$/gm,
-      "<h2>$1</h2>"
-    );
-
-  html =
-    html.replace(
-      /^[-•] (.*)$/gm,
-      "<li>$1</li>"
-    );
-
-  html =
-    html.replace(
-      /(<li>.*<\/li>)/gs,
-      "<ul>$1</ul>"
-    );
-
-  html =
-    html.replace(
-      /\n\n/g,
-      "</p><p>"
-    );
-
-  html =
-    html.replace(
-      /\n/g,
-      "<br>"
-    );
-
-  return `<p>${html}</p>`;
+  return html;
 }
 
-/* =========================
+/* =========================================================
    ERROR
-========================= */
+   ========================================================= */
 
 function renderError(
   message
@@ -1605,37 +1934,52 @@ function renderError(
   $("results").innerHTML = `
     <div class="empty-state error-state">
       <h2>Something went wrong</h2>
+
       <p>
         ${escapeHTML(
           message ||
-            "NEXUS couldn't complete the search."
+            "NEXUS couldn't complete the request."
         )}
       </p>
 
-      <button
-        type="button"
-        id="retrySearch"
-      >
-        Try again
-      </button>
+      ${
+        currentQuery
+          ? `
+            <button
+              type="button"
+              id="retrySearch"
+            >
+              Try again
+            </button>
+          `
+          : ""
+      }
     </div>
   `;
-
-  $("retrySearch")?.addEventListener(
-    "click",
-    () => {
-      if (currentQuery) {
-        performSearch(
-          currentQuery
-        );
-      }
-    }
-  );
 }
 
-/* =========================
-   SAVE RESULTS
-========================= */
+document.addEventListener(
+  "click",
+  event => {
+    if (
+      !event.target.closest(
+        "#retrySearch"
+      )
+    ) {
+      return;
+    }
+
+    if (currentQuery) {
+      performSearch(
+        currentQuery
+      );
+    }
+  }
+);
+
+/* =========================================================
+   SAVE
+   ========================================================= */
 
 document.addEventListener(
   "click",
@@ -1650,21 +1994,38 @@ document.addEventListener(
     }
 
     const title =
-      button.dataset.saveTitle;
+      button.dataset
+        .saveTitle || "";
 
     const url =
       safeURL(
-        button.dataset.saveUrl
+        button.dataset
+          .saveUrl
       );
 
-    if (!title || !url) {
+    if (
+      !title ||
+      !url
+    ) {
       return;
     }
+
+    if (
+      button.dataset.busy ===
+      "true"
+    ) {
+      return;
+    }
+
+    button.dataset.busy =
+      "true";
 
     const original =
       button.textContent;
 
-    button.disabled = true;
+    button.disabled =
+      true;
+
     button.textContent =
       "Saving...";
 
@@ -1674,10 +2035,11 @@ document.addEventListener(
           "/api/saved",
           {
             method: "POST",
-            body: JSON.stringify({
-              title,
-              url
-            })
+            body:
+              JSON.stringify({
+                title,
+                url
+              })
           }
         );
 
@@ -1685,43 +2047,41 @@ document.addEventListener(
         data.alreadySaved
           ? "Already saved"
           : "Saved ✓";
-
-      setTimeout(
-        () => {
-          button.textContent =
-            original;
-          button.disabled =
-            false;
-        },
-        1500
-      );
     } catch (error) {
       button.textContent =
-        "Failed";
-
-      setTimeout(
-        () => {
-          button.textContent =
-            original;
-          button.disabled =
-            false;
-        },
-        1500
-      );
+        error.status === 401
+          ? "Sign in"
+          : "Failed";
     }
+
+    setTimeout(
+      () => {
+        button.textContent =
+          original;
+
+        button.disabled =
+          false;
+
+        delete button.dataset.busy;
+      },
+      1500
+    );
   }
 );
 
-/* =========================
+/* =========================================================
    HISTORY
-========================= */
+   ========================================================= */
 
 async function loadHistory() {
-  if (!$("historyList")) {
+  const list =
+    $("historyList");
+
+  if (!list) {
     return;
   }
 
-  $("historyList").innerHTML = `
+  list.innerHTML = `
     <div class="loading-state">
       Loading history...
     </div>
@@ -1734,34 +2094,30 @@ async function loadHistory() {
       );
 
     const history =
-      data.history || [];
+      Array.isArray(
+        data.history
+      )
+        ? data.history
+        : [];
 
     if (!history.length) {
-      $("historyList").innerHTML = `
+      list.innerHTML = `
         <div class="empty-state">
           <h2>No search history</h2>
-          <p>Your searches will appear here.</p>
+          <p>
+            Your searches will appear here.
+          </p>
         </div>
       `;
 
       return;
     }
 
-    $("historyList").innerHTML =
+    list.innerHTML =
       history
-        .map(item => {
-          const url =
-            safeURL(
-              item.url
-            );
-
-          return `
-            <div
-              class="history-item"
-              data-history-query="${escapeHTML(
-                item.query
-              )}"
-            >
+        .map(
+          item => `
+            <div class="history-item">
               <div>
                 <strong>
                   ${escapeHTML(
@@ -1779,604 +2135,4 @@ async function loadHistory() {
 
               <button
                 type="button"
-                data-history-query="${escapeHTML(
-                  item.query
-                )}"
-              >
-                Search again
-              </button>
-
-              ${
-                url
-                  ? `
-                    <a
-                      href="${escapeHTML(
-                        url
-                      )}"
-                    >
-                      Open
-                    </a>
-                  `
-                  : ""
-              }
-            </div>
-          `;
-        })
-        .join("");
-  } catch (error) {
-    $("historyList").innerHTML = `
-      <div class="empty-state">
-        ${escapeHTML(
-          error.message
-        )}
-      </div>
-    `;
-  }
-}
-
-$("clearHistoryBtn")?.addEventListener(
-  "click",
-  async () => {
-    try {
-      await api(
-        "/api/history",
-        {
-          method: "DELETE"
-        }
-      );
-
-      loadHistory();
-    } catch (error) {
-      console.error(error);
-    }
-  }
-);
-
-/* =========================
-   SAVED
-========================= */
-
-async function loadSaved() {
-  if (!$("savedList")) {
-    return;
-  }
-
-  $("savedList").innerHTML = `
-    <div class="loading-state">
-      Loading saved items...
-    </div>
-  `;
-
-  try {
-    const data =
-      await api(
-        "/api/saved"
-      );
-
-    const saved =
-      data.saved || [];
-
-    if (!saved.length) {
-      $("savedList").innerHTML = `
-        <div class="empty-state">
-          <h2>Nothing saved yet</h2>
-          <p>
-            Save useful results and
-            they'll appear here.
-          </p>
-        </div>
-      `;
-
-      return;
-    }
-
-    $("savedList").innerHTML =
-      saved
-        .map(item => {
-          const url =
-            safeURL(
-              item.url
-            );
-
-          if (!url) {
-            return "";
-          }
-
-          return `
-            <article class="saved-item">
-              <a
-                href="${escapeHTML(
-                  url
-                )}"
-              >
-                ${escapeHTML(
-                  item.title
-                )}
-              </a>
-
-              <button
-                type="button"
-                data-delete-saved="${escapeHTML(
-                  item.id
-                )}"
-              >
-                Remove
-              </button>
-            </article>
-          `;
-        })
-        .join("");
-  } catch (error) {
-    $("savedList").innerHTML = `
-      <div class="empty-state">
-        ${escapeHTML(
-          error.message
-        )}
-      </div>
-    `;
-  }
-}
-
-document.addEventListener(
-  "click",
-  async event => {
-    const button =
-      event.target.closest(
-        "[data-delete-saved]"
-      );
-
-    if (!button) {
-      return;
-    }
-
-    try {
-      await api(
-        `/api/saved/${encodeURIComponent(
-          button.dataset.deleteSaved
-        )}`,
-        {
-          method: "DELETE"
-        }
-      );
-
-      loadSaved();
-    } catch (error) {
-      console.error(error);
-    }
-  }
-);
-
-$("clearSavedBtn")?.addEventListener(
-  "click",
-  async () => {
-    try {
-      await api(
-        "/api/saved",
-        {
-          method: "DELETE"
-        }
-      );
-
-      loadSaved();
-    } catch (error) {
-      console.error(error);
-    }
-  }
-);
-
-/* =========================
-   LOGOUT
-========================= */
-
-async function logout() {
-  try {
-    await api(
-      "/api/logout",
-      {
-        method: "POST"
-      }
-    );
-  } catch {}
-
-  currentUser = null;
-
-  $("app")?.classList.add(
-    "hidden"
-  );
-
-  $("authScreen")?.classList.remove(
-    "hidden"
-  );
-
-  showLogin();
-}
-
-$("accountLogout")?.addEventListener(
-  "click",
-  logout
-);
-
-$("settingsLogout")?.addEventListener(
-  "click",
-  logout
-);
-
-/* =========================
-   THEME
-========================= */
-
-$("themeBtn")?.addEventListener(
-  "click",
-  () => {
-    document.body.classList.toggle(
-      "light"
-    );
-
-    const light =
-      document.body.classList.contains(
-        "light"
-      );
-
-    localStorage.setItem(
-      "nexus-theme",
-      light
-        ? "light"
-        : "dark"
-    );
-  }
-);
-
-(function restoreTheme() {
-  const theme =
-    localStorage.getItem(
-      "nexus-theme"
-    );
-
-  if (theme === "light") {
-    document.body.classList.add(
-      "light"
-    );
-  }
-})();
-
-/* =========================
-   ADMIN
-========================= */
-
-async function loadAdmin() {
-  if (
-    !currentUser?.isAdmin
-  ) {
-    return;
-  }
-
-  try {
-    const data =
-      await api(
-        "/api/admin/status"
-      );
-
-    updateAdminUI(
-      data
-    );
-  } catch (error) {
-    if ($("adminMessage")) {
-      $("adminMessage").textContent =
-        error.message;
-    }
-  }
-}
-
-function updateAdminUI(
-  data
-) {
-  const locked =
-    Boolean(
-      data.maintenance
-    );
-
-  if ($("adminStatusText")) {
-    $("adminStatusText").textContent =
-      locked
-        ? "Website locked"
-        : "Website online";
-  }
-
-  if ($("adminStatusBadge")) {
-    $("adminStatusBadge").textContent =
-      locked
-        ? "LOCKED"
-        : "ONLINE";
-  }
-
-  if ($("maintenanceTitle")) {
-    $("maintenanceTitle").value =
-      data.title || "";
-  }
-
-  if ($("maintenanceMessage")) {
-    $("maintenanceMessage").value =
-      data.message || "";
-  }
-
-  if ($("adminUsers")) {
-    $("adminUsers").textContent =
-      data.users ?? 0;
-  }
-
-  if ($("adminSessions")) {
-    $("adminSessions").textContent =
-      data.sessions ?? 0;
-  }
-}
-
-$("lockWebsite")?.addEventListener(
-  "click",
-  async () => {
-    try {
-      const title =
-        $("maintenanceTitle")
-          ?.value.trim() ||
-        "NEXUS is temporarily offline";
-
-      const message =
-        $("maintenanceMessage")
-          ?.value.trim() ||
-        "The website is currently undergoing maintenance.";
-
-      await api(
-        "/api/admin/lock",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            title,
-            message
-          })
-        }
-      );
-
-      if ($("adminMessage")) {
-        $("adminMessage").textContent =
-          "NEXUS has been locked.";
-      }
-
-      loadAdmin();
-    } catch (error) {
-      if ($("adminMessage")) {
-        $("adminMessage").textContent =
-          error.message;
-      }
-    }
-  }
-);
-
-$("unlockWebsite")?.addEventListener(
-  "click",
-  async () => {
-    try {
-      await api(
-        "/api/admin/unlock",
-        {
-          method: "POST"
-        }
-      );
-
-      if ($("adminMessage")) {
-        $("adminMessage").textContent =
-          "NEXUS has been unlocked.";
-      }
-
-      loadAdmin();
-    } catch (error) {
-      if ($("adminMessage")) {
-        $("adminMessage").textContent =
-          error.message;
-      }
-    }
-  }
-);
-
-/* =========================
-   BROWSER HISTORY
-========================= */
-
-function updateBrowserState(
-  query,
-  tab,
-  results
-) {
-  try {
-    const state = {
-      nexus: true,
-      query,
-      tab,
-      results
-    };
-
-    const params =
-      new URLSearchParams();
-
-    params.set(
-      "q",
-      query
-    );
-
-    params.set(
-      "tab",
-      tab
-    );
-
-    window.history.pushState(
-      state,
-      "",
-      `?${params.toString()}`
-    );
-  } catch {
-    // Ignore browser history errors.
-  }
-}
-
-window.addEventListener(
-  "popstate",
-  event => {
-    const state =
-      event.state;
-
-    if (
-      state?.nexus &&
-      state.query
-    ) {
-      currentTab =
-        state.tab ||
-        "web";
-
-      document
-        .querySelectorAll(
-          "#searchTabs .tab"
-        )
-        .forEach(button => {
-          button.classList.toggle(
-            "active",
-            button.dataset.tab ===
-              currentTab
-          );
-        });
-
-      if ($("searchInput")) {
-        $("searchInput").value =
-          state.query;
-      }
-
-      currentQuery =
-        state.query;
-
-      if (
-        currentTab ===
-        "ai"
-      ) {
-        renderAI(
-          state.query
-        );
-      } else {
-        renderResults(
-          state.results || [],
-          state.query
-        );
-      }
-
-      return;
-    }
-
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const query =
-      params.get("q");
-
-    const tab =
-      params.get("tab");
-
-    if (tab) {
-      currentTab =
-        tab;
-
-      document
-        .querySelectorAll(
-          "#searchTabs .tab"
-        )
-        .forEach(button => {
-          button.classList.toggle(
-            "active",
-            button.dataset.tab ===
-              currentTab
-          );
-        });
-    }
-
-    if (query) {
-      if ($("searchInput")) {
-        $("searchInput").value =
-          query;
-      }
-
-      performSearch(
-        query
-      );
-    } else {
-      renderSearchStart();
-    }
-  }
-);
-
-/* =========================
-   STARTUP
-========================= */
-
-async function boot() {
-  try {
-    const data =
-      await api(
-        "/api/me"
-      );
-
-    enterApp(
-      data.user
-    );
-
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const query =
-      params.get("q");
-
-    const tab =
-      params.get("tab");
-
-    if (tab) {
-      currentTab =
-        tab;
-
-      document
-        .querySelectorAll(
-          "#searchTabs .tab"
-        )
-        .forEach(button => {
-          button.classList.toggle(
-            "active",
-            button.dataset.tab ===
-              currentTab
-          );
-        });
-    }
-
-    if (query) {
-      if ($("searchInput")) {
-        $("searchInput").value =
-          query;
-      }
-
-      performSearch(
-        query
-      );
-    }
-  } catch {
-    $("authScreen")?.classList.remove(
-      "hidden"
-    );
-
-    $("app")?.classList.add(
-      "hidden"
-    );
-  }
-}
-
-/* =========================
-   INITIAL UI
-========================= */
-
-renderSearchStart();
-boot();
+                data
