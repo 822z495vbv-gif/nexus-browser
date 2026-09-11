@@ -2135,4 +2135,794 @@ async function loadHistory() {
 
               <button
                 type="button"
-                data
+                data-history-query="${escapeHTML(
+                  item.query
+                )}"
+              >
+                Search again
+              </button>
+            </div>
+          `
+        )
+        .join("");
+  } catch (error) {
+    list.innerHTML = `
+      <div class="empty-state">
+        ${escapeHTML(
+          error.message
+        )}
+      </div>
+    `;
+  }
+}
+
+document.addEventListener(
+  "click",
+  event => {
+    const button =
+      event.target.closest(
+        "[data-history-query]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const query =
+      button.dataset
+        .historyQuery || "";
+
+    if (!query) {
+      return;
+    }
+
+    switchView(
+      "search"
+    );
+
+    setActiveTab(
+      "web"
+    );
+
+    if ($("searchInput")) {
+      $("searchInput").value =
+        query;
+    }
+
+    performSearch(
+      query
+    );
+  }
+);
+
+$("clearHistoryBtn")?.addEventListener(
+  "click",
+  async () => {
+    const button =
+      $("clearHistoryBtn");
+
+    if (button) {
+      button.disabled =
+        true;
+    }
+
+    try {
+      await api(
+        "/api/history",
+        {
+          method: "DELETE"
+        }
+      );
+
+      await loadHistory();
+    } catch (error) {
+      console.error(
+        error
+      );
+    } finally {
+      if (button) {
+        button.disabled =
+          false;
+      }
+    }
+  }
+);
+
+/* =========================================================
+   SAVED
+   ========================================================= */
+
+async function loadSaved() {
+  const list =
+    $("savedList");
+
+  if (!list) {
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="loading-state">
+      Loading saved items...
+    </div>
+  `;
+
+  try {
+    const data =
+      await api(
+        "/api/saved"
+      );
+
+    const saved =
+      Array.isArray(
+        data.saved
+      )
+        ? data.saved
+        : [];
+
+    if (!saved.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <h2>Nothing saved yet</h2>
+          <p>
+            Save useful results and
+            they'll appear here.
+          </p>
+        </div>
+      `;
+
+      return;
+    }
+
+    list.innerHTML =
+      saved
+        .map(
+          item => {
+            const url =
+              safeURL(
+                item.url
+              );
+
+            if (!url) {
+              return "";
+            }
+
+            return `
+              <article class="saved-item">
+                <a
+                  href="${escapeHTML(
+                    url
+                  )}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ${escapeHTML(
+                    item.title ||
+                      "Saved item"
+                  )}
+                </a>
+
+                <button
+                  type="button"
+                  data-delete-saved="${escapeHTML(
+                    item.id
+                  )}"
+                >
+                  Remove
+                </button>
+              </article>
+            `;
+          }
+        )
+        .join("");
+  } catch (error) {
+    list.innerHTML = `
+      <div class="empty-state">
+        ${escapeHTML(
+          error.message
+        )}
+      </div>
+    `;
+  }
+}
+
+document.addEventListener(
+  "click",
+  async event => {
+    const button =
+      event.target.closest(
+        "[data-delete-saved]"
+      );
+
+    if (!button) {
+      return;
+    }
+
+    if (
+      button.dataset.busy ===
+      "true"
+    ) {
+      return;
+    }
+
+    button.dataset.busy =
+      "true";
+
+    button.disabled =
+      true;
+
+    try {
+      await api(
+        `/api/saved/${encodeURIComponent(
+          button.dataset
+            .deleteSaved
+        )}`,
+        {
+          method: "DELETE"
+        }
+      );
+
+      await loadSaved();
+    } catch (error) {
+      console.error(
+        error
+      );
+
+      button.disabled =
+        false;
+
+      delete button.dataset.busy;
+    }
+  }
+);
+
+$("clearSavedBtn")?.addEventListener(
+  "click",
+  async () => {
+    const button =
+      $("clearSavedBtn");
+
+    if (button) {
+      button.disabled =
+        true;
+    }
+
+    try {
+      await api(
+        "/api/saved",
+        {
+          method: "DELETE"
+        }
+      );
+
+      await loadSaved();
+    } catch (error) {
+      console.error(
+        error
+      );
+    } finally {
+      if (button) {
+        button.disabled =
+          false;
+      }
+    }
+  }
+);
+
+/* =========================================================
+   LOGOUT
+   ========================================================= */
+
+async function logout() {
+  try {
+    await api(
+      "/api/logout",
+      {
+        method: "POST"
+      }
+    );
+  } catch {}
+
+  currentUser =
+    null;
+
+  currentQuery =
+    "";
+
+  currentResults =
+    [];
+
+  currentTab =
+    "web";
+
+  currentView =
+    "search";
+
+  searchRequestId++;
+  aiRequestId++;
+
+  setActiveTab(
+    "web"
+  );
+
+  if ($("searchInput")) {
+    $("searchInput").value =
+      "";
+  }
+
+  $("suggestions")
+    ?.classList.add(
+      "hidden"
+    );
+
+  $("app")?.classList.add(
+    "hidden"
+  );
+
+  $("authScreen")
+    ?.classList.remove(
+      "hidden"
+    );
+
+  showLogin();
+
+  replaceBrowserState(
+    "/"
+  );
+}
+
+$("accountLogout")?.addEventListener(
+  "click",
+  logout
+);
+
+$("settingsLogout")?.addEventListener(
+  "click",
+  logout
+);
+
+/* =========================================================
+   THEME
+   ========================================================= */
+
+$("themeBtn")?.addEventListener(
+  "click",
+  () => {
+    document.body.classList.toggle(
+      "light"
+    );
+
+    const light =
+      document.body.classList.contains(
+        "light"
+      );
+
+    localStorage.setItem(
+      "nexus-theme",
+      light
+        ? "light"
+        : "dark"
+    );
+  }
+);
+
+(function restoreTheme() {
+  try {
+    const theme =
+      localStorage.getItem(
+        "nexus-theme"
+      );
+
+    if (
+      theme ===
+      "light"
+    ) {
+      document.body.classList.add(
+        "light"
+      );
+    }
+  } catch {}
+})();
+
+/* =========================================================
+   ADMIN
+   ========================================================= */
+
+async function loadAdmin() {
+  if (
+    !currentUser?.isAdmin
+  ) {
+    return;
+  }
+
+  try {
+    const data =
+      await api(
+        "/api/admin/status"
+      );
+
+    updateAdminUI(
+      data
+    );
+  } catch (error) {
+    if ($("adminMessage")) {
+      $("adminMessage").textContent =
+        error.message;
+    }
+  }
+}
+
+function updateAdminUI(
+  data
+) {
+  const locked =
+    Boolean(
+      data.maintenance
+    );
+
+  if ($("adminStatusText")) {
+    $("adminStatusText").textContent =
+      locked
+        ? "Website locked"
+        : "Website online";
+  }
+
+  if ($("adminStatusBadge")) {
+    $("adminStatusBadge").textContent =
+      locked
+        ? "LOCKED"
+        : "ONLINE";
+  }
+
+  if (
+    $("maintenanceTitle") &&
+    document.activeElement !==
+      $("maintenanceTitle")
+  ) {
+    $("maintenanceTitle").value =
+      data.title || "";
+  }
+
+  if (
+    $("maintenanceMessage") &&
+    document.activeElement !==
+      $("maintenanceMessage")
+  ) {
+    $("maintenanceMessage").value =
+      data.message || "";
+  }
+
+  if ($("adminUsers")) {
+    $("adminUsers").textContent =
+      data.users ?? 0;
+  }
+
+  if ($("adminSessions")) {
+    $("adminSessions").textContent =
+      data.sessions ?? 0;
+  }
+}
+
+$("lockWebsite")?.addEventListener(
+  "click",
+  async () => {
+    const button =
+      $("lockWebsite");
+
+    if (
+      button?.dataset.busy ===
+      "true"
+    ) {
+      return;
+    }
+
+    if (button) {
+      button.dataset.busy =
+        "true";
+      button.disabled =
+        true;
+    }
+
+    try {
+      const title =
+        $("maintenanceTitle")
+          ?.value
+          .trim() ||
+        "NEXUS is temporarily offline";
+
+      const message =
+        $("maintenanceMessage")
+          ?.value
+          .trim() ||
+        "The website is currently undergoing maintenance.";
+
+      await api(
+        "/api/admin/lock",
+        {
+          method: "POST",
+          body:
+            JSON.stringify({
+              title,
+              message
+            })
+        }
+      );
+
+      if ($("adminMessage")) {
+        $("adminMessage").textContent =
+          "NEXUS has been locked.";
+      }
+
+      await loadAdmin();
+    } catch (error) {
+      if ($("adminMessage")) {
+        $("adminMessage").textContent =
+          error.message;
+      }
+    } finally {
+      if (button) {
+        button.disabled =
+          false;
+
+        delete button.dataset.busy;
+      }
+    }
+  }
+);
+
+$("unlockWebsite")?.addEventListener(
+  "click",
+  async () => {
+    const button =
+      $("unlockWebsite");
+
+    if (
+      button?.dataset.busy ===
+      "true"
+    ) {
+      return;
+    }
+
+    if (button) {
+      button.dataset.busy =
+        "true";
+      button.disabled =
+        true;
+    }
+
+    try {
+      await api(
+        "/api/admin/unlock",
+        {
+          method: "POST"
+        }
+      );
+
+      if ($("adminMessage")) {
+        $("adminMessage").textContent =
+          "NEXUS has been unlocked.";
+      }
+
+      await loadAdmin();
+    } catch (error) {
+      if ($("adminMessage")) {
+        $("adminMessage").textContent =
+          error.message;
+      }
+    } finally {
+      if (button) {
+        button.disabled =
+          false;
+
+        delete button.dataset.busy;
+      }
+    }
+  }
+);
+
+/* =========================================================
+   BROWSER HISTORY
+   ========================================================= */
+
+function replaceBrowserState(
+  url
+) {
+  try {
+    window.history.replaceState(
+      {
+        nexus: true,
+        query:
+          currentQuery,
+        tab:
+          currentTab
+      },
+      "",
+      url
+    );
+  } catch {}
+}
+
+function pushBrowserState(
+  url
+) {
+  try {
+    window.history.pushState(
+      {
+        nexus: true,
+        query:
+          currentQuery,
+        tab:
+          currentTab
+      },
+      "",
+      url
+    );
+  } catch {}
+}
+
+async function restoreURLState() {
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+
+  const query =
+    params.get("q");
+
+  const tab =
+    params.get("tab");
+
+  if (tab) {
+    setActiveTab(
+      tab
+    );
+  } else {
+    setActiveTab(
+      "web"
+    );
+  }
+
+  if (!query) {
+    renderSearchStart();
+    return;
+  }
+
+  if ($("searchInput")) {
+    $("searchInput").value =
+      query;
+  }
+
+  if (
+    currentTab ===
+    "ai"
+  ) {
+    await renderAI(
+      query
+    );
+  } else {
+    await performSearch(
+      query
+    );
+  }
+}
+
+window.addEventListener(
+  "popstate",
+  async () => {
+    if (!currentUser) {
+      return;
+    }
+
+    searchRequestId++;
+    aiRequestId++;
+
+    await restoreURLState();
+  }
+);
+
+/* =========================================================
+   SESSION EXPIRED
+   ========================================================= */
+
+async function handleSessionExpired() {
+  currentUser =
+    null;
+
+  searchRequestId++;
+  aiRequestId++;
+
+  $("app")?.classList.add(
+    "hidden"
+  );
+
+  $("authScreen")
+    ?.classList.remove(
+      "hidden"
+    );
+
+  showLogin();
+
+  if ($("loginError")) {
+    $("loginError").textContent =
+      "Your session expired. Please sign in again.";
+  }
+}
+
+/* =========================================================
+   STARTUP
+   ========================================================= */
+
+async function boot() {
+  if (booting) {
+    return;
+  }
+
+  booting =
+    true;
+
+  try {
+    const data =
+      await api(
+        "/api/me"
+      );
+
+    enterApp(
+      data.user
+    );
+
+    await restoreURLState();
+  } catch (error) {
+    /*
+      401 = genuinely not logged in.
+      Other errors should NOT silently
+      pretend the user logged out.
+    */
+
+    if (
+      error.status ===
+      401
+    ) {
+      $("authScreen")
+        ?.classList.remove(
+          "hidden"
+        );
+
+      $("app")?.classList.add(
+        "hidden"
+      );
+
+      showLogin();
+    } else {
+      $("authScreen")
+        ?.classList.remove(
+          "hidden"
+        );
+
+      $("app")?.classList.add(
+        "hidden"
+      );
+
+      if ($("loginError")) {
+        $("loginError").textContent =
+          error.message ||
+          "NEXUS is temporarily unavailable.";
+      }
+    }
+  } finally {
+    booting =
+      false;
+  }
+}
+
+/* =========================================================
+   INITIAL UI
+   ========================================================= */
+
+setActiveTab(
+  "web"
+);
+
+renderSearchStart();
+
+boot();
