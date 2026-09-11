@@ -17,6 +17,10 @@ const DB_FILE = path.join(DATA_DIR, "db.json");
 const SESSION_COOKIE = "nexus_session";
 const SESSION_DAYS = 30;
 
+/* =========================================================
+   EXPRESS
+========================================================= */
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -24,7 +28,7 @@ app.use(express.urlencoded({ extended: true }));
    DATABASE
 ========================================================= */
 
-function defaultDB() {
+function createDefaultDB() {
   return {
     users: [],
     sessions: [],
@@ -39,93 +43,180 @@ function defaultDB() {
   };
 }
 
-function ensureDB() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+function ensureDatabase() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, {
+        recursive: true
+      });
+    }
 
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify(defaultDB(), null, 2)
-    );
+    if (!fs.existsSync(DB_FILE)) {
+      fs.writeFileSync(
+        DB_FILE,
+        JSON.stringify(createDefaultDB(), null, 2),
+        "utf8"
+      );
+
+      console.log("Created NEXUS database.");
+    }
+  } catch (error) {
+    console.error("Could not create database:", error);
   }
 }
 
-function loadDB() {
-  ensureDB();
+function loadDatabase() {
+  ensureDatabase();
 
   try {
-    const raw = fs.readFileSync(DB_FILE, "utf8");
+    const raw = fs.readFileSync(
+      DB_FILE,
+      "utf8"
+    );
+
     const parsed = JSON.parse(raw);
+    const defaults = createDefaultDB();
 
     return {
-      ...defaultDB(),
-      ...parsed,
-      users: Array.isArray(parsed.users) ? parsed.users : [],
-      sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-      history: Array.isArray(parsed.history) ? parsed.history : [],
-      saved: Array.isArray(parsed.saved) ? parsed.saved : [],
+      users: Array.isArray(parsed.users)
+        ? parsed.users
+        : [],
+
+      sessions: Array.isArray(parsed.sessions)
+        ? parsed.sessions
+        : [],
+
+      history: Array.isArray(parsed.history)
+        ? parsed.history
+        : [],
+
+      saved: Array.isArray(parsed.saved)
+        ? parsed.saved
+        : [],
+
       settings: {
-        ...defaultDB().settings,
+        ...defaults.settings,
         ...(parsed.settings || {})
       }
     };
-  } catch {
-    return defaultDB();
+  } catch (error) {
+    console.error(
+      "Database could not be read. Creating a fresh database."
+    );
+
+    const fresh = createDefaultDB();
+
+    try {
+      fs.writeFileSync(
+        DB_FILE,
+        JSON.stringify(fresh, null, 2),
+        "utf8"
+      );
+    } catch (writeError) {
+      console.error(
+        "Could not create fresh database:",
+        writeError
+      );
+    }
+
+    return fresh;
   }
 }
 
-let db = loadDB();
+let db = loadDatabase();
 
-function saveDB() {
-  ensureDB();
+function saveDatabase() {
+  ensureDatabase();
 
-  const tempFile = DB_FILE + ".tmp";
+  try {
+    const tempFile = `${DB_FILE}.tmp`;
 
-  fs.writeFileSync(
-    tempFile,
-    JSON.stringify(db, null, 2),
-    "utf8"
-  );
+    fs.writeFileSync(
+      tempFile,
+      JSON.stringify(db, null, 2),
+      "utf8"
+    );
 
-  fs.renameSync(tempFile, DB_FILE);
+    fs.renameSync(
+      tempFile,
+      DB_FILE
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Database save failed:",
+      error
+    );
+
+    return false;
+  }
 }
 
 /* =========================================================
-   PASSWORDS
+   PASSWORD HASHING
 ========================================================= */
 
 function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString("hex");
+  const salt = crypto
+    .randomBytes(16)
+    .toString("hex");
 
   const hash = crypto
-    .scryptSync(password, salt, 64)
+    .scryptSync(
+      password,
+      salt,
+      64
+    )
     .toString("hex");
 
   return `${salt}:${hash}`;
 }
 
-function verifyPassword(password, stored) {
+function verifyPassword(password, storedHash) {
   try {
-    if (!stored || !stored.includes(":")) {
+    if (
+      typeof storedHash !== "string" ||
+      !storedHash.includes(":")
+    ) {
       return false;
     }
 
-    const [salt, originalHash] = stored.split(":");
+    const parts = storedHash.split(":");
 
-    const derivedHash = crypto
-      .scryptSync(password, salt, 64)
+    if (parts.length !== 2) {
+      return false;
+    }
+
+    const salt = parts[0];
+    const originalHash = parts[1];
+
+    const calculatedHash = crypto
+      .scryptSync(
+        password,
+        salt,
+        64
+      )
       .toString("hex");
 
-    const a = Buffer.from(originalHash, "hex");
-    const b = Buffer.from(derivedHash, "hex");
+    const a = Buffer.from(
+      originalHash,
+      "hex"
+    );
+
+    const b = Buffer.from(
+      calculatedHash,
+      "hex"
+    );
 
     if (a.length !== b.length) {
       return false;
     }
 
-    return crypto.timingSafeEqual(a, b);
+    return crypto.timingSafeEqual(
+      a,
+      b
+    );
   } catch {
     return false;
   }
@@ -142,133 +233,31 @@ function normalizeUsername(username) {
 }
 
 function findUser(username) {
-  const normalized = normalizeUsername(username);
+  const normalized =
+    normalizeUsername(username);
 
   return db.users.find(
     user =>
-      String(user.username || "").toLowerCase() === normalized
+      normalizeUsername(
+        user.username
+      ) === normalized
   );
 }
 
-function publicUser(user) {
-  if (!user) return null;
+function getPublicUser(user) {
+  if (!user) {
+    return null;
+  }
 
   return {
     id: user.id,
     username: user.username,
     createdAt: user.createdAt,
     isAdmin:
-      String(user.username || "").toLowerCase() === "calsgc"
+      normalizeUsername(
+        user.username
+      ) === "calsgc"
   };
-}
-
-/* =========================================================
-   SESSIONS
-========================================================= */
-
-function hashToken(token) {
-  return crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
-}
-
-function createSession(userId) {
-  const token = crypto.randomBytes(48).toString("hex");
-
-  const expiresAt =
-    Date.now() +
-    SESSION_DAYS * 24 * 60 * 60 * 1000;
-
-  db.sessions.push({
-    id: crypto.randomUUID(),
-    userId,
-    tokenHash: hashToken(token),
-    createdAt: Date.now(),
-    expiresAt
-  });
-
-  saveDB();
-
-  return token;
-}
-
-function getSession(req) {
-  const cookies = parseCookies(req.headers.cookie || "");
-  const token = cookies[SESSION_COOKIE];
-
-  if (!token) {
-    return null;
-  }
-
-  const tokenHash = hashToken(token);
-
-  const session = db.sessions.find(
-    item => item.tokenHash === tokenHash
-  );
-
-  if (!session) {
-    return null;
-  }
-
-  if (session.expiresAt <= Date.now()) {
-    db.sessions = db.sessions.filter(
-      item => item.id !== session.id
-    );
-
-    saveDB();
-
-    return null;
-  }
-
-  return session;
-}
-
-function getCurrentUser(req) {
-  const session = getSession(req);
-
-  if (!session) {
-    return null;
-  }
-
-  return db.users.find(
-    user => user.id === session.userId
-  ) || null;
-}
-
-function requireAuth(req, res, next) {
-  const user = getCurrentUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      error: "You must be logged in."
-    });
-  }
-
-  req.user = user;
-  next();
-}
-
-function requireAdmin(req, res, next) {
-  const user = getCurrentUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      error: "You must be logged in."
-    });
-  }
-
-  if (
-    String(user.username || "").toLowerCase() !==
-    "calsgc"
-  ) {
-    return res.status(403).json({
-      error: "Admin access required."
-    });
-  }
-
-  req.user = user;
-  next();
 }
 
 /* =========================================================
@@ -276,12 +265,18 @@ function requireAdmin(req, res, next) {
 ========================================================= */
 
 function parseCookies(header) {
-  const result = {};
+  const cookies = {};
 
-  header.split(";").forEach(part => {
+  if (!header) {
+    return cookies;
+  }
+
+  for (const part of header.split(";")) {
     const index = part.indexOf("=");
 
-    if (index === -1) return;
+    if (index === -1) {
+      continue;
+    }
 
     const key = part
       .slice(0, index)
@@ -291,10 +286,15 @@ function parseCookies(header) {
       .slice(index + 1)
       .trim();
 
-    result[key] = decodeURIComponent(value);
-  });
+    try {
+      cookies[key] =
+        decodeURIComponent(value);
+    } catch {
+      cookies[key] = value;
+    }
+  }
 
-  return result;
+  return cookies;
 }
 
 function setSessionCookie(res, token) {
@@ -321,11 +321,147 @@ function clearSessionCookie(res) {
 }
 
 /* =========================================================
+   SESSIONS
+========================================================= */
+
+function hashSessionToken(token) {
+  return crypto
+    .createHash("sha256")
+    .update(token)
+    .digest("hex");
+}
+
+function createSession(userId) {
+  const token =
+    crypto.randomBytes(48).toString("hex");
+
+  const now = Date.now();
+
+  db.sessions.push({
+    id: crypto.randomUUID(),
+    userId,
+    tokenHash:
+      hashSessionToken(token),
+    createdAt: now,
+    expiresAt:
+      now +
+      SESSION_DAYS *
+        24 *
+        60 *
+        60 *
+        1000
+  });
+
+  saveDatabase();
+
+  return token;
+}
+
+function getSession(req) {
+  const cookies = parseCookies(
+    req.headers.cookie || ""
+  );
+
+  const token =
+    cookies[SESSION_COOKIE];
+
+  if (!token) {
+    return null;
+  }
+
+  const tokenHash =
+    hashSessionToken(token);
+
+  const session =
+    db.sessions.find(
+      item =>
+        item.tokenHash === tokenHash
+    );
+
+  if (!session) {
+    return null;
+  }
+
+  if (
+    !session.expiresAt ||
+    session.expiresAt <= Date.now()
+  ) {
+    db.sessions =
+      db.sessions.filter(
+        item =>
+          item.id !== session.id
+      );
+
+    saveDatabase();
+
+    return null;
+  }
+
+  return session;
+}
+
+function getCurrentUser(req) {
+  const session =
+    getSession(req);
+
+  if (!session) {
+    return null;
+  }
+
+  return (
+    db.users.find(
+      user =>
+        user.id === session.userId
+    ) || null
+  );
+}
+
+function requireAuth(req, res, next) {
+  const user =
+    getCurrentUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "You must be logged in."
+    });
+  }
+
+  req.user = user;
+
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  const user =
+    getCurrentUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "You must be logged in."
+    });
+  }
+
+  if (
+    normalizeUsername(
+      user.username
+    ) !== "calsgc"
+  ) {
+    return res.status(403).json({
+      error: "Admin access required."
+    });
+  }
+
+  req.user = user;
+
+  next();
+}
+
+/* =========================================================
    MAINTENANCE
 ========================================================= */
 
-function maintenanceAllows(req) {
-  const allowed = [
+function maintenanceAllowed(req) {
+  const allowed = new Set([
     "/api/login",
     "/api/register",
     "/api/me",
@@ -334,9 +470,9 @@ function maintenanceAllows(req) {
     "/api/admin/status",
     "/api/admin/reset-password",
     "/api/health"
-  ];
+  ]);
 
-  return allowed.includes(req.path);
+  return allowed.has(req.path);
 }
 
 app.use((req, res, next) => {
@@ -344,15 +480,18 @@ app.use((req, res, next) => {
     return next();
   }
 
-  if (maintenanceAllows(req)) {
+  if (maintenanceAllowed(req)) {
     return next();
   }
 
-  const user = getCurrentUser(req);
+  const user =
+    getCurrentUser(req);
 
   if (
     user &&
-    String(user.username || "").toLowerCase() === "calsgc"
+    normalizeUsername(
+      user.username
+    ) === "calsgc"
   ) {
     return next();
   }
@@ -367,221 +506,339 @@ app.use((req, res, next) => {
 
   return res
     .status(503)
-    .sendFile(path.join(__dirname, "public", "index.html"));
+    .sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "index.html"
+      )
+    );
 });
 
 /* =========================================================
-   AUTH
+   REGISTER
 ========================================================= */
 
-app.post("/api/register", (req, res) => {
-  const username = String(
-    req.body?.username || ""
-  ).trim();
+app.post(
+  "/api/register",
+  (req, res) => {
+    const username =
+      String(
+        req.body?.username ||
+          req.body?.user ||
+          ""
+      ).trim();
 
-  const password = String(
-    req.body?.password || ""
-  );
+    const password =
+      String(
+        req.body?.password ||
+          ""
+      );
 
-  if (!/^[a-zA-Z0-9_]{3,32}$/.test(username)) {
-    return res.status(400).json({
-      error:
-        "Username must be 3-32 characters and use only letters, numbers, and underscores."
-    });
-  }
+    if (
+      !/^[a-zA-Z0-9_]{3,32}$/.test(
+        username
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Username must be 3-32 characters and use only letters, numbers, and underscores."
+      });
+    }
 
-  if (password.length < 8) {
-    return res.status(400).json({
-      error:
-        "Password must be at least 8 characters."
-    });
-  }
+    if (password.length < 8) {
+      return res.status(400).json({
+        error:
+          "Password must be at least 8 characters."
+      });
+    }
 
-  if (findUser(username)) {
-    return res.status(409).json({
-      error: "That username is already registered."
-    });
-  }
+    if (findUser(username)) {
+      return res.status(409).json({
+        error:
+          "That username is already registered."
+      });
+    }
 
-  const user = {
-    id: crypto.randomUUID(),
-    username,
-    passwordHash: hashPassword(password),
-    createdAt: Date.now()
-  };
+    const user = {
+      id: crypto.randomUUID(),
+      username,
+      passwordHash:
+        hashPassword(password),
+      createdAt: Date.now()
+    };
 
-  db.users.push(user);
+    db.users.push(user);
 
-  saveDB();
+    if (!saveDatabase()) {
+      db.users =
+        db.users.filter(
+          item =>
+            item.id !== user.id
+        );
 
-  const token = createSession(user.id);
+      return res.status(500).json({
+        error:
+          "Could not save your account."
+      });
+    }
 
-  setSessionCookie(res, token);
+    const token =
+      createSession(user.id);
 
-  return res.json({
-    success: true,
-    user: publicUser(user)
-  });
-});
-
-app.post("/api/login", (req, res) => {
-  const username = String(
-    req.body?.username || ""
-  ).trim();
-
-  const password = String(
-    req.body?.password || ""
-  );
-
-  if (!username || !password) {
-    return res.status(400).json({
-      error: "Enter your username and password."
-    });
-  }
-
-  const user = findUser(username);
-
-  /*
-    IMPORTANT:
-    We deliberately use the stored hash from the
-    database instead of assuming anything about the
-    password format.
-  */
-
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    return res.status(401).json({
-      error: "Invalid username or password."
-    });
-  }
-
-  /*
-    Remove old sessions for this user before creating
-    a fresh one. This prevents stale/broken sessions.
-  */
-
-  db.sessions = db.sessions.filter(
-    session => session.userId !== user.id
-  );
-
-  const token = createSession(user.id);
-
-  setSessionCookie(res, token);
-
-  return res.json({
-    success: true,
-    user: publicUser(user)
-  });
-});
-
-app.post("/api/logout", (req, res) => {
-  const session = getSession(req);
-
-  if (session) {
-    db.sessions = db.sessions.filter(
-      item => item.id !== session.id
+    setSessionCookie(
+      res,
+      token
     );
 
-    saveDB();
+    return res.json({
+      success: true,
+      user:
+        getPublicUser(user)
+    });
   }
+);
 
-  clearSessionCookie(res);
+/* =========================================================
+   LOGIN
+========================================================= */
 
-  return res.json({
-    success: true
-  });
-});
+app.post(
+  "/api/login",
+  (req, res) => {
+    const username =
+      String(
+        req.body?.username ||
+          req.body?.user ||
+          req.body?.login ||
+          ""
+      ).trim();
 
-app.get("/api/me", (req, res) => {
-  const user = getCurrentUser(req);
+    const password =
+      String(
+        req.body?.password ||
+          req.body?.pass ||
+          ""
+      );
 
-  return res.json({
-    loggedIn: Boolean(user),
-    user: publicUser(user)
-  });
-});
+    if (!username) {
+      return res.status(400).json({
+        error:
+          "Please enter your username."
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        error:
+          "Please enter your password."
+      });
+    }
+
+    const user =
+      findUser(username);
+
+    if (!user) {
+      return res.status(401).json({
+        error:
+          "Invalid username or password."
+      });
+    }
+
+    if (
+      !verifyPassword(
+        password,
+        user.passwordHash
+      )
+    ) {
+      return res.status(401).json({
+        error:
+          "Invalid username or password."
+      });
+    }
+
+    /*
+      Remove previous sessions for
+      this account.
+    */
+
+    db.sessions =
+      db.sessions.filter(
+        session =>
+          session.userId !==
+          user.id
+      );
+
+    const token =
+      createSession(user.id);
+
+    setSessionCookie(
+      res,
+      token
+    );
+
+    return res.json({
+      success: true,
+      user:
+        getPublicUser(user)
+    });
+  }
+);
+
+/* =========================================================
+   LOGOUT
+========================================================= */
+
+app.post(
+  "/api/logout",
+  (req, res) => {
+    const session =
+      getSession(req);
+
+    if (session) {
+      db.sessions =
+        db.sessions.filter(
+          item =>
+            item.id !==
+            session.id
+        );
+
+      saveDatabase();
+    }
+
+    clearSessionCookie(res);
+
+    return res.json({
+      success: true
+    });
+  }
+);
+
+/* =========================================================
+   CURRENT USER
+========================================================= */
+
+app.get(
+  "/api/me",
+  (req, res) => {
+    const user =
+      getCurrentUser(req);
+
+    return res.json({
+      loggedIn: Boolean(user),
+      user:
+        getPublicUser(user)
+    });
+  }
+);
 
 /* =========================================================
    ADMIN PASSWORD RESET
 ========================================================= */
 
-app.post("/api/admin/reset-password", (req, res) => {
-  const currentUser = getCurrentUser(req);
+app.post(
+  "/api/admin/reset-password",
+  (req, res) => {
+    const currentUser =
+      getCurrentUser(req);
 
-  const suppliedKey = String(
-    req.headers["x-nexus-reset-key"] ||
-    req.body?.resetKey ||
-    ""
-  );
+    const suppliedKey =
+      String(
+        req.headers[
+          "x-nexus-reset-key"
+        ] ||
+          req.body?.resetKey ||
+          ""
+      );
 
-  const configuredKey =
-    process.env.NEXUS_ADMIN_RESET_KEY || "";
+    const configuredKey =
+      String(
+        process.env
+          .NEXUS_ADMIN_RESET_KEY ||
+          ""
+      );
 
-  const isAdmin =
-    currentUser &&
-    String(currentUser.username || "").toLowerCase() ===
-      "calsgc";
+    const isAdmin =
+      currentUser &&
+      normalizeUsername(
+        currentUser.username
+      ) === "calsgc";
 
-  const validEmergencyKey =
-    configuredKey &&
-    suppliedKey &&
-    suppliedKey === configuredKey;
+    const validEmergencyKey =
+      configuredKey.length > 0 &&
+      suppliedKey.length > 0 &&
+      suppliedKey ===
+        configuredKey;
 
-  if (!isAdmin && !validEmergencyKey) {
-    return res.status(403).json({
-      error: "Not authorized."
+    if (
+      !isAdmin &&
+      !validEmergencyKey
+    ) {
+      return res.status(403).json({
+        error: "Not authorized."
+      });
+    }
+
+    const username =
+      String(
+        req.body?.username ||
+          ""
+      ).trim();
+
+    const newPassword =
+      String(
+        req.body?.newPassword ||
+          ""
+      );
+
+    if (!username) {
+      return res.status(400).json({
+        error:
+          "Username is required."
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error:
+          "New password must be at least 8 characters."
+      });
+    }
+
+    const user =
+      findUser(username);
+
+    if (!user) {
+      return res.status(404).json({
+        error:
+          "User not found."
+      });
+    }
+
+    user.passwordHash =
+      hashPassword(
+        newPassword
+      );
+
+    db.sessions =
+      db.sessions.filter(
+        session =>
+          session.userId !==
+          user.id
+      );
+
+    saveDatabase();
+
+    return res.json({
+      success: true,
+      message:
+        "Password reset successfully."
     });
   }
-
-  const username = String(
-    req.body?.username || ""
-  ).trim();
-
-  const newPassword = String(
-    req.body?.newPassword || ""
-  );
-
-  if (!username) {
-    return res.status(400).json({
-      error: "Username is required."
-    });
-  }
-
-  if (newPassword.length < 8) {
-    return res.status(400).json({
-      error:
-        "New password must be at least 8 characters."
-    });
-  }
-
-  const user = findUser(username);
-
-  if (!user) {
-    return res.status(404).json({
-      error: "User not found."
-    });
-  }
-
-  user.passwordHash = hashPassword(newPassword);
-
-  /*
-    Kill every active session for the reset account.
-    They must log in again with the new password.
-  */
-
-  db.sessions = db.sessions.filter(
-    session => session.userId !== user.id
-  );
-
-  saveDB();
-
-  return res.json({
-    success: true,
-    message: "Password reset successfully."
-  });
-});
+);
 
 /* =========================================================
-   SEARCH HELPERS
+   SEARCH UTILITIES
 ========================================================= */
 
 function cleanQuery(value) {
@@ -595,185 +852,312 @@ function normalizeText(value) {
   return String(value || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /[^\p{L}\p{N}\s]/gu,
+      " "
+    )
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function queryTerms(query) {
+function getQueryTerms(query) {
   return normalizeText(query)
     .split(" ")
-    .filter(word => word.length >= 2);
+    .filter(
+      term =>
+        term.length >= 2
+    );
 }
 
-function relevanceScore(query, item) {
-  const q = normalizeText(query);
+function stripHTML(text) {
+  return String(text || "")
+    .replace(/<[^>]*>/g, "")
+    .replace(
+      /&quot;/g,
+      '"'
+    )
+    .replace(
+      /&#039;/g,
+      "'"
+    )
+    .replace(
+      /&amp;/g,
+      "&"
+    )
+    .replace(
+      /&lt;/g,
+      "<"
+    )
+    .replace(
+      /&gt;/g,
+      ">"
+    );
+}
 
-  const title = normalizeText(item.title);
-  const description = normalizeText(
-    item.description || item.snippet || ""
+/*
+  STRICT relevance check.
+
+  This is the important part.
+
+  A result must actually contain
+  meaningful parts of the user's
+  query before it is allowed through.
+*/
+
+function isRelevant(query, item) {
+  const normalizedQuery =
+    normalizeText(query);
+
+  const terms =
+    getQueryTerms(query);
+
+  const title =
+    normalizeText(
+      item.title
+    );
+
+  const description =
+    normalizeText(
+      item.description ||
+        ""
+    );
+
+  if (!title && !description) {
+    return false;
+  }
+
+  if (
+    title.includes(
+      normalizedQuery
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    description.includes(
+      normalizedQuery
+    )
+  ) {
+    return true;
+  }
+
+  if (terms.length === 1) {
+    const term = terms[0];
+
+    return (
+      title.includes(term) ||
+      description.includes(term)
+    );
+  }
+
+  const matching =
+    terms.filter(
+      term =>
+        title.includes(term) ||
+        description.includes(term)
+    );
+
+  /*
+    For multi-word queries,
+    require at least half the
+    meaningful words.
+  */
+
+  return (
+    matching.length /
+      terms.length >=
+    0.5
   );
+}
 
-  const url = normalizeText(item.url || "");
+function calculateRelevance(
+  query,
+  item
+) {
+  const q =
+    normalizeText(query);
+
+  const title =
+    normalizeText(
+      item.title
+    );
+
+  const description =
+    normalizeText(
+      item.description ||
+        ""
+    );
 
   let score = 0;
 
-  /*
-    Exact title match = huge boost
-  */
-
   if (title === q) {
+    score += 5000;
+  }
+
+  if (title.includes(q)) {
+    score += 2500;
+  }
+
+  if (description.includes(q)) {
     score += 1000;
   }
 
-  /*
-    Exact phrase in title
-  */
-
-  if (title.includes(q)) {
-    score += 500;
-  }
-
-  /*
-    Exact phrase in description
-  */
-
-  if (description.includes(q)) {
-    score += 200;
-  }
-
-  const terms = queryTerms(query);
+  const terms =
+    getQueryTerms(query);
 
   for (const term of terms) {
-    if (title.includes(term)) {
+    if (
+      title.includes(term)
+    ) {
+      score += 500;
+    }
+
+    if (
+      description.includes(
+        term
+      )
+    ) {
       score += 100;
-    }
-
-    if (description.includes(term)) {
-      score += 25;
-    }
-
-    if (url.includes(term)) {
-      score += 10;
     }
   }
 
   /*
-    Require actual query relevance.
+    Educational/general knowledge
+    pages get a small boost when
+    Wikipedia is the source.
   */
 
-  const matchingTerms = terms.filter(
-    term =>
-      title.includes(term) ||
-      description.includes(term)
-  );
-
-  if (terms.length > 0) {
-    const coverage =
-      matchingTerms.length / terms.length;
-
-    score += coverage * 150;
-
-    if (coverage < 0.34) {
-      score -= 500;
-    }
+  if (
+    item.source ===
+    "Wikipedia"
+  ) {
+    score += 25;
   }
 
   return score;
 }
 
-function dedupeResults(results) {
-  const seen = new Set();
+function deduplicate(results) {
+  const seen =
+    new Set();
 
-  return results.filter(result => {
-    const key =
-      String(result.url || "")
-        .toLowerCase()
-        .replace(/\/$/, "");
+  return results.filter(
+    result => {
+      const url =
+        String(
+          result.url || ""
+        )
+          .trim()
+          .toLowerCase()
+          .replace(
+            /\/$/,
+            ""
+          );
 
-    if (!key || seen.has(key)) {
-      return false;
+      if (!url) {
+        return false;
+      }
+
+      if (seen.has(url)) {
+        return false;
+      }
+
+      seen.add(url);
+
+      return true;
     }
-
-    seen.add(key);
-
-    return true;
-  });
+  );
 }
 
 /* =========================================================
-   WIKIPEDIA SEARCH
+   WIKIPEDIA
 ========================================================= */
 
-async function wikipediaSearch(query, limit = 20) {
-  const url =
-    "https://en.wikipedia.org/w/api.php?" +
+async function searchWikipedia(
+  query,
+  limit = 30
+) {
+  const params =
     new URLSearchParams({
       action: "query",
       list: "search",
       srsearch: query,
       srnamespace: "0",
       srlimit: String(limit),
-      srprop: "snippet|timestamp|size",
       srsort: "relevance",
+      srprop:
+        "snippet|timestamp|size",
       format: "json",
       formatversion: "2"
     });
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "NEXUS/1.0 search application"
-    }
-  });
+  const response =
+    await fetch(
+      `https://en.wikipedia.org/w/api.php?${params}`,
+      {
+        headers: {
+          "User-Agent":
+            "NEXUS/1.0"
+        }
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
-      `Wikipedia returned ${response.status}`
+      `Wikipedia HTTP ${response.status}`
     );
   }
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
-  const results =
-    data?.query?.search || [];
-
-  return results.map(item => ({
-    title: item.title,
-    description: String(
-      item.snippet || ""
-    )
-      .replace(/<[^>]*>/g, "")
-      .replace(/&quot;/g, '"')
-      .replace(/&#039;/g, "'")
-      .replace(/&amp;/g, "&"),
-    url:
-      `https://en.wikipedia.org/wiki/` +
-      encodeURIComponent(
-        item.title.replace(/ /g, "_")
+  return (
+    data?.query?.search ||
+    []
+  ).map(item => ({
+    title:
+      item.title || "",
+    description:
+      stripHTML(
+        item.snippet || ""
       ),
-    source: "Wikipedia",
+    url:
+      `https://en.wikipedia.org/wiki/${encodeURIComponent(
+        String(
+          item.title || ""
+        ).replace(
+          / /g,
+          "_"
+        )
+      )}`,
+    source:
+      "Wikipedia",
     type: "web"
   }));
 }
 
 /* =========================================================
-   BRAVE SEARCH
-   Optional:
-   BRAVE_SEARCH_API_KEY
+   BRAVE WEB SEARCH
 ========================================================= */
 
-async function braveSearch(query, limit = 20) {
-  const key =
-    process.env.BRAVE_SEARCH_API_KEY;
+async function searchBrave(
+  query,
+  limit = 20
+) {
+  const apiKey =
+    process.env
+      .BRAVE_SEARCH_API_KEY;
 
-  if (!key) {
+  if (!apiKey) {
     return [];
   }
 
-  const url =
-    "https://api.search.brave.com/res/v1/web/search?" +
+  const params =
     new URLSearchParams({
       q: query,
       count: String(limit),
@@ -781,483 +1165,639 @@ async function braveSearch(query, limit = 20) {
       search_lang: "en"
     });
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": key
-    }
-  });
+  const response =
+    await fetch(
+      `https://api.search.brave.com/res/v1/web/search?${params}`,
+      {
+        headers: {
+          Accept:
+            "application/json",
+          "X-Subscription-Token":
+            apiKey
+        }
+      }
+    );
 
   if (!response.ok) {
     throw new Error(
-      `Brave Search returned ${response.status}`
+      `Brave HTTP ${response.status}`
     );
   }
 
-  const data = await response.json();
+  const data =
+    await response.json();
 
-  return (data?.web?.results || []).map(
-    item => ({
-      title: item.title || "",
-      description:
-        item.description ||
-        item.snippet ||
-        "",
-      url: item.url || "",
-      source: "Web",
-      type: "web"
-    })
-  );
+  return (
+    data?.web?.results ||
+    []
+  ).map(item => ({
+    title:
+      item.title || "",
+    description:
+      item.description ||
+      item.snippet ||
+      "",
+    url:
+      item.url || "",
+    source:
+      "Web",
+    type:
+      "web"
+  }));
 }
 
 /* =========================================================
-   MAIN SEARCH
+   MAIN WEB SEARCH
 ========================================================= */
 
-app.get("/api/search", requireAuth, async (req, res) => {
-  const query = cleanQuery(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      error: "Search query is required."
-    });
-  }
-
-  try {
-    let results = [];
-
-    /*
-      If BRAVE_SEARCH_API_KEY exists, use real web
-      search first.
-    */
-
-    const braveResults =
-      await braveSearch(query, 20);
-
-    results.push(...braveResults);
-
-    /*
-      Wikipedia provides a strong educational fallback
-      and additional knowledge results.
-    */
-
-    const wikiResults =
-      await wikipediaSearch(query, 15);
-
-    results.push(...wikiResults);
-
-    /*
-      Remove duplicates.
-    */
-
-    results = dedupeResults(results);
-
-    /*
-      Score everything ourselves.
-      This prevents low-quality matches from floating
-      to the top simply because an external API returned
-      them early.
-    */
-
-    results = results
-      .map(result => ({
-        ...result,
-        _score: relevanceScore(
-          query,
-          result
-        )
-      }))
-      .filter(result => result._score > -100)
-      .sort(
-        (a, b) =>
-          b._score - a._score
-      )
-      .slice(0, 20)
-      .map(
-        ({
-          _score,
-          ...result
-        }) => result
+app.get(
+  "/api/search",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanQuery(
+        req.query.q
       );
 
-    /*
-      Save search history.
-    */
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
+    }
 
-    db.history.push({
-      id: crypto.randomUUID(),
-      userId: req.user.id,
-      query,
-      tab: "web",
-      createdAt: Date.now()
-    });
+    try {
+      let results = [];
 
-    /*
-      Keep history manageable.
-    */
+      /*
+        Real web search if a Brave key
+        exists.
+      */
 
-    db.history = db.history
-      .filter(
-        item => item.userId === req.user.id
-      )
-      .length > 100
-      ? [
-          ...db.history.filter(
-            item =>
-              item.userId !== req.user.id
-          ),
-          ...db.history
-            .filter(
-              item =>
-                item.userId === req.user.id
+      const braveResults =
+        await searchBrave(
+          query,
+          25
+        );
+
+      results.push(
+        ...braveResults
+      );
+
+      /*
+        Wikipedia fallback/additional
+        knowledge results.
+      */
+
+      const wikiResults =
+        await searchWikipedia(
+          query,
+          25
+        );
+
+      results.push(
+        ...wikiResults
+      );
+
+      /*
+        HARD FILTER:
+        unrelated results are removed.
+      */
+
+      results =
+        results.filter(
+          result =>
+            isRelevant(
+              query,
+              result
             )
-            .slice(-100)
-        ]
-      : db.history;
+        );
 
-    saveDB();
+      /*
+        Remove duplicates.
+      */
 
-    return res.json({
-      query,
-      results
-    });
-  } catch (error) {
-    console.error(
-      "Search error:",
-      error
-    );
+      results =
+        deduplicate(
+          results
+        );
 
-    return res.status(500).json({
-      error:
-        "Search temporarily failed."
-    });
+      /*
+        Rank results ourselves.
+      */
+
+      results =
+        results
+          .map(result => ({
+            ...result,
+            relevance:
+              calculateRelevance(
+                query,
+                result
+              )
+          }))
+          .sort(
+            (a, b) =>
+              b.relevance -
+              a.relevance
+          )
+          .slice(0, 20)
+          .map(
+            ({
+              relevance,
+              ...result
+            }) => result
+          );
+
+      /*
+        Save history.
+      */
+
+      db.history.push({
+        id:
+          crypto.randomUUID(),
+        userId:
+          req.user.id,
+        query,
+        tab: "web",
+        createdAt:
+          Date.now()
+      });
+
+      /*
+        Keep only the latest
+        100 searches per account.
+      */
+
+      const userHistory =
+        db.history
+          .filter(
+            item =>
+              item.userId ===
+              req.user.id
+          )
+          .sort(
+            (a, b) =>
+              b.createdAt -
+              a.createdAt
+          )
+          .slice(0, 100);
+
+      const otherHistory =
+        db.history.filter(
+          item =>
+            item.userId !==
+            req.user.id
+        );
+
+      db.history = [
+        ...otherHistory,
+        ...userHistory
+      ];
+
+      saveDatabase();
+
+      return res.json({
+        query,
+        results,
+        provider:
+          process.env
+            .BRAVE_SEARCH_API_KEY
+            ? "web"
+            : "wikipedia"
+      });
+    } catch (error) {
+      console.error(
+        "Search error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Search temporarily failed."
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    NEWS
 ========================================================= */
 
-app.get("/api/news", requireAuth, async (req, res) => {
-  const query = cleanQuery(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      error: "Search query is required."
-    });
-  }
-
-  try {
-    const url =
-      "https://api.gdeltproject.org/api/v2/doc/doc?" +
-      new URLSearchParams({
-        query,
-        mode: "artlist",
-        format: "json",
-        maxrecords: "20",
-        sort: "HybridRel"
-      });
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(
-        `GDELT returned ${response.status}`
+app.get(
+  "/api/news",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanQuery(
+        req.query.q
       );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
     }
 
-    const data = await response.json();
+    try {
+      const params =
+        new URLSearchParams({
+          query,
+          mode: "artlist",
+          format: "json",
+          maxrecords: "20",
+          sort: "HybridRel"
+        });
 
-    const results =
-      (data?.articles || [])
-        .map(article => ({
-          title:
-            article.title ||
-            "Untitled",
-          description:
-            article.seendate
-              ? `Published ${article.seendate}`
-              : "",
-          url:
-            article.url ||
-            "",
-          source:
-            article.domain ||
-            "News",
-          type: "news",
-          image:
-            article.socialimage ||
-            null
-        }))
-        .filter(item => item.url);
+      const response =
+        await fetch(
+          `https://api.gdeltproject.org/api/v2/doc/doc?${params}`
+        );
 
-    return res.json({
-      query,
-      results
-    });
-  } catch (error) {
-    console.error(
-      "News error:",
-      error
-    );
+      if (!response.ok) {
+        throw new Error(
+          `GDELT HTTP ${response.status}`
+        );
+      }
 
-    return res.status(500).json({
-      error:
-        "News search temporarily failed."
-    });
+      const data =
+        await response.json();
+
+      const results =
+        (
+          data?.articles ||
+          []
+        )
+          .map(article => ({
+            title:
+              article.title ||
+              "Untitled",
+            description:
+              article.seendate
+                ? `Published ${article.seendate}`
+                : "",
+            url:
+              article.url ||
+              "",
+            source:
+              article.domain ||
+              "News",
+            type:
+              "news",
+            image:
+              article.socialimage ||
+              null
+          }))
+          .filter(
+            item =>
+              item.url
+          );
+
+      return res.json({
+        query,
+        results
+      });
+    } catch (error) {
+      console.error(
+        "News search error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "News search temporarily failed."
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    IMAGES
 ========================================================= */
 
-app.get("/api/images", requireAuth, async (req, res) => {
-  const query = cleanQuery(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      error: "Search query is required."
-    });
-  }
-
-  try {
-    const url =
-      "https://commons.wikimedia.org/w/api.php?" +
-      new URLSearchParams({
-        action: "query",
-        generator: "search",
-        gsrsearch: query,
-        gsrnamespace: "6",
-        gsrlimit: "30",
-        prop: "imageinfo",
-        iiprop: "url|extmetadata",
-        iiurlwidth: "600",
-        format: "json",
-        origin: "*"
-      });
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(
-        `Wikimedia returned ${response.status}`
+app.get(
+  "/api/images",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanQuery(
+        req.query.q
       );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
     }
 
-    const data = await response.json();
+    try {
+      const params =
+        new URLSearchParams({
+          action: "query",
+          generator: "search",
+          gsrsearch: query,
+          gsrnamespace: "6",
+          gsrlimit: "30",
+          prop: "imageinfo",
+          iiprop:
+            "url|extmetadata",
+          iiurlwidth: "600",
+          format: "json",
+          origin: "*"
+        });
 
-    const pages =
-      Object.values(
-        data?.query?.pages || {}
+      const response =
+        await fetch(
+          `https://commons.wikimedia.org/w/api.php?${params}`
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          `Wikimedia HTTP ${response.status}`
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const pages =
+        Object.values(
+          data?.query?.pages ||
+            {}
+        );
+
+      const results =
+        pages
+          .map(page => {
+            const info =
+              page.imageinfo?.[0];
+
+            if (!info) {
+              return null;
+            }
+
+            const title =
+              String(
+                page.title ||
+                  "Image"
+              ).replace(
+                /^File:/,
+                ""
+              );
+
+            return {
+              title,
+              description:
+                info.extmetadata
+                  ?.ImageDescription
+                  ?.value ||
+                "",
+              url:
+                info.descriptionurl ||
+                `https://commons.wikimedia.org/wiki/${encodeURIComponent(
+                  page.title
+                )}`,
+              image:
+                info.thumburl ||
+                info.url ||
+                "",
+              source:
+                "Wikimedia Commons",
+              type:
+                "image"
+            };
+          })
+          .filter(Boolean)
+          .filter(
+            result =>
+              isRelevant(
+                query,
+                result
+              )
+          );
+
+      return res.json({
+        query,
+        results
+      });
+    } catch (error) {
+      console.error(
+        "Image search error:",
+        error
       );
 
-    const results = pages
-      .map(page => {
-        const info =
-          page.imageinfo?.[0];
-
-        if (!info) return null;
-
-        return {
-          title:
-            page.title
-              ?.replace(/^File:/, "") ||
-            "Image",
-          description:
-            info.extmetadata?.ImageDescription
-              ?.value ||
-            "",
-          url:
-            info.descriptionurl ||
-            `https://commons.wikimedia.org/wiki/${encodeURIComponent(
-              page.title
-            )}`,
-          image:
-            info.thumburl ||
-            info.url ||
-            "",
-          source: "Wikimedia Commons",
-          type: "image"
-        };
-      })
-      .filter(Boolean);
-
-    return res.json({
-      query,
-      results
-    });
-  } catch (error) {
-    console.error(
-      "Image error:",
-      error
-    );
-
-    return res.status(500).json({
-      error:
-        "Image search temporarily failed."
-    });
+      return res.status(500).json({
+        error:
+          "Image search temporarily failed."
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    VIDEOS
 ========================================================= */
 
-app.get("/api/videos", requireAuth, async (req, res) => {
-  const query = cleanQuery(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      error: "Search query is required."
-    });
-  }
-
-  try {
-    const url =
-      "https://commons.wikimedia.org/w/api.php?" +
-      new URLSearchParams({
-        action: "query",
-        generator: "search",
-        gsrsearch:
-          `${query} filetype:video`,
-        gsrnamespace: "6",
-        gsrlimit: "20",
-        prop: "imageinfo",
-        iiprop: "url|extmetadata",
-        format: "json",
-        origin: "*"
-      });
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(
-        `Wikimedia returned ${response.status}`
+app.get(
+  "/api/videos",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanQuery(
+        req.query.q
       );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
     }
 
-    const data = await response.json();
+    try {
+      const params =
+        new URLSearchParams({
+          action: "query",
+          generator: "search",
+          gsrsearch:
+            `${query} filetype:video`,
+          gsrnamespace: "6",
+          gsrlimit: "20",
+          prop: "imageinfo",
+          iiprop:
+            "url|extmetadata",
+          format: "json",
+          origin: "*"
+        });
 
-    const pages =
-      Object.values(
-        data?.query?.pages || {}
+      const response =
+        await fetch(
+          `https://commons.wikimedia.org/w/api.php?${params}`
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          `Wikimedia HTTP ${response.status}`
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const pages =
+        Object.values(
+          data?.query?.pages ||
+            {}
+        );
+
+      const results =
+        pages
+          .map(page => {
+            const info =
+              page.imageinfo?.[0];
+
+            if (!info) {
+              return null;
+            }
+
+            const title =
+              String(
+                page.title ||
+                  "Video"
+              ).replace(
+                /^File:/,
+                ""
+              );
+
+            const lower =
+              title.toLowerCase();
+
+            const videoFile =
+              lower.endsWith(".mp4") ||
+              lower.endsWith(".webm") ||
+              lower.endsWith(".ogv") ||
+              lower.endsWith(".ogg");
+
+            if (!videoFile) {
+              return null;
+            }
+
+            return {
+              title,
+              description:
+                info.extmetadata
+                  ?.ImageDescription
+                  ?.value ||
+                "",
+              url:
+                info.descriptionurl ||
+                info.url ||
+                "",
+              video:
+                info.url ||
+                "",
+              source:
+                "Wikimedia Commons",
+              type:
+                "video"
+            };
+          })
+          .filter(Boolean)
+          .filter(
+            result =>
+              isRelevant(
+                query,
+                result
+              )
+          );
+
+      return res.json({
+        query,
+        results
+      });
+    } catch (error) {
+      console.error(
+        "Video search error:",
+        error
       );
 
-    const results = pages
-      .map(page => {
-        const info =
-          page.imageinfo?.[0];
-
-        if (!info) return null;
-
-        const title =
-          page.title
-            ?.replace(/^File:/, "") ||
-          "Video";
-
-        const lower =
-          title.toLowerCase();
-
-        if (
-          !lower.endsWith(".mp4") &&
-          !lower.endsWith(".webm") &&
-          !lower.endsWith(".ogv") &&
-          !lower.endsWith(".ogg")
-        ) {
-          return null;
-        }
-
-        return {
-          title,
-          description:
-            info.extmetadata
-              ?.ImageDescription
-              ?.value ||
-            "",
-          url:
-            info.descriptionurl ||
-            info.url ||
-            "",
-          video:
-            info.url ||
-            "",
-          source: "Wikimedia Commons",
-          type: "video"
-        };
-      })
-      .filter(Boolean);
-
-    return res.json({
-      query,
-      results
-    });
-  } catch (error) {
-    console.error(
-      "Video error:",
-      error
-    );
-
-    return res.status(500).json({
-      error:
-        "Video search temporarily failed."
-    });
+      return res.status(500).json({
+        error:
+          "Video search temporarily failed."
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    AI
 ========================================================= */
 
-app.post("/api/ai", requireAuth, async (req, res) => {
-  const prompt = String(
-    req.body?.prompt || ""
-  ).trim();
+app.post(
+  "/api/ai",
+  requireAuth,
+  async (req, res) => {
+    const prompt =
+      String(
+        req.body?.prompt ||
+          ""
+      ).trim();
 
-  if (!prompt) {
-    return res.status(400).json({
-      error: "Prompt is required."
-    });
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(503).json({
-      error:
-        "AI is not configured yet."
-    });
-  }
-
-  try {
-    const client = new OpenAI({
-      apiKey:
-        process.env.OPENAI_API_KEY
-    });
-
-    const response =
-      await client.responses.create({
-        model:
-          process.env.OPENAI_MODEL ||
-          "gpt-5.6-luna",
-        input: prompt
+    if (!prompt) {
+      return res.status(400).json({
+        error:
+          "Prompt is required."
       });
+    }
 
-    return res.json({
-      answer:
-        response.output_text ||
-        "No response generated."
-    });
-  } catch (error) {
-    console.error(
-      "AI error:",
-      error
-    );
+    if (
+      !process.env.OPENAI_API_KEY
+    ) {
+      return res.status(503).json({
+        error:
+          "AI is not configured yet."
+      });
+    }
 
-    return res.status(500).json({
-      error:
-        "AI request failed."
-    });
+    try {
+      const client =
+        new OpenAI({
+          apiKey:
+            process.env
+              .OPENAI_API_KEY
+        });
+
+      const response =
+        await client.responses.create(
+          {
+            model:
+              process.env
+                .OPENAI_MODEL ||
+              "gpt-5.6-luna",
+            input: prompt
+          }
+        );
+
+      return res.json({
+        answer:
+          response.output_text ||
+          "No response generated."
+      });
+    } catch (error) {
+      console.error(
+        "AI error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "AI request failed."
+      });
+    }
   }
-});
+);
 
 /* =========================================================
    HISTORY
@@ -1267,19 +1807,21 @@ app.get(
   "/api/history",
   requireAuth,
   (req, res) => {
-    const items = db.history
-      .filter(
-        item =>
-          item.userId === req.user.id
-      )
-      .sort(
-        (a, b) =>
-          b.createdAt -
-          a.createdAt
-      );
+    const history =
+      db.history
+        .filter(
+          item =>
+            item.userId ===
+            req.user.id
+        )
+        .sort(
+          (a, b) =>
+            b.createdAt -
+            a.createdAt
+        );
 
     res.json({
-      history: items
+      history
     });
   }
 );
@@ -1288,12 +1830,14 @@ app.delete(
   "/api/history",
   requireAuth,
   (req, res) => {
-    db.history = db.history.filter(
-      item =>
-        item.userId !== req.user.id
-    );
+    db.history =
+      db.history.filter(
+        item =>
+          item.userId !==
+          req.user.id
+      );
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true
@@ -1309,19 +1853,21 @@ app.get(
   "/api/saved",
   requireAuth,
   (req, res) => {
-    const items = db.saved
-      .filter(
-        item =>
-          item.userId === req.user.id
-      )
-      .sort(
-        (a, b) =>
-          b.createdAt -
-          a.createdAt
-      );
+    const saved =
+      db.saved
+        .filter(
+          item =>
+            item.userId ===
+            req.user.id
+        )
+        .sort(
+          (a, b) =>
+            b.createdAt -
+            a.createdAt
+        );
 
     res.json({
-      saved: items
+      saved
     });
   }
 );
@@ -1333,7 +1879,10 @@ app.post(
     const item =
       req.body?.item;
 
-    if (!item || !item.url) {
+    if (
+      !item ||
+      !item.url
+    ) {
       return res.status(400).json({
         error:
           "A valid result is required."
@@ -1345,7 +1894,8 @@ app.post(
         saved =>
           saved.userId ===
             req.user.id &&
-          saved.url === item.url
+          saved.url ===
+            item.url
       );
 
     if (existing) {
@@ -1356,32 +1906,42 @@ app.post(
     }
 
     const saved = {
-      id: crypto.randomUUID(),
-      userId: req.user.id,
+      id:
+        crypto.randomUUID(),
+      userId:
+        req.user.id,
       title:
-        String(item.title || "")
-          .slice(0, 500),
+        String(
+          item.title || ""
+        ).slice(0, 500),
       description:
         String(
-          item.description || ""
+          item.description ||
+            ""
         ).slice(0, 2000),
       url:
-        String(item.url)
-          .slice(0, 2000),
+        String(
+          item.url
+        ).slice(0, 2000),
       source:
-        String(item.source || "")
-          .slice(0, 200),
+        String(
+          item.source || ""
+        ).slice(0, 200),
       image:
         item.image
-          ? String(item.image)
-              .slice(0, 2000)
+          ? String(
+              item.image
+            ).slice(0, 2000)
           : null,
-      createdAt: Date.now()
+      createdAt:
+        Date.now()
     };
 
-    db.saved.push(saved);
+    db.saved.push(
+      saved
+    );
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true,
@@ -1397,20 +1957,24 @@ app.delete(
     const before =
       db.saved.length;
 
-    db.saved = db.saved.filter(
-      item =>
-        !(
-          item.id === req.params.id &&
-          item.userId === req.user.id
-        )
-    );
+    db.saved =
+      db.saved.filter(
+        item =>
+          !(
+            item.id ===
+              req.params.id &&
+            item.userId ===
+              req.user.id
+          )
+      );
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true,
       deleted:
-        db.saved.length !== before
+        db.saved.length !==
+        before
     });
   }
 );
@@ -1419,12 +1983,14 @@ app.delete(
   "/api/saved",
   requireAuth,
   (req, res) => {
-    db.saved = db.saved.filter(
-      item =>
-        item.userId !== req.user.id
-    );
+    db.saved =
+      db.saved.filter(
+        item =>
+          item.userId !==
+          req.user.id
+      );
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true
@@ -1433,7 +1999,7 @@ app.delete(
 );
 
 /* =========================================================
-   ADMIN
+   ADMIN STATUS
 ========================================================= */
 
 app.get(
@@ -1443,12 +2009,15 @@ app.get(
     res.json({
       maintenance:
         Boolean(
-          db.settings.maintenance
+          db.settings
+            .maintenance
         ),
       title:
-        db.settings.maintenanceTitle,
+        db.settings
+          .maintenanceTitle,
       message:
-        db.settings.maintenanceMessage,
+        db.settings
+          .maintenanceMessage,
       users:
         db.users.length,
       sessions:
@@ -1457,27 +2026,38 @@ app.get(
   }
 );
 
+/* =========================================================
+   ADMIN LOCK
+========================================================= */
+
 app.post(
   "/api/admin/lock",
   requireAdmin,
   (req, res) => {
-    db.settings.maintenance = true;
+    db.settings.maintenance =
+      true;
 
-    if (req.body?.title) {
-      db.settings.maintenanceTitle =
+    if (
+      req.body?.title
+    ) {
+      db.settings
+        .maintenanceTitle =
         String(
           req.body.title
         ).slice(0, 200);
     }
 
-    if (req.body?.message) {
-      db.settings.maintenanceMessage =
+    if (
+      req.body?.message
+    ) {
+      db.settings
+        .maintenanceMessage =
         String(
           req.body.message
         ).slice(0, 1000);
     }
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true,
@@ -1486,13 +2066,18 @@ app.post(
   }
 );
 
+/* =========================================================
+   ADMIN UNLOCK
+========================================================= */
+
 app.post(
   "/api/admin/unlock",
   requireAdmin,
   (req, res) => {
-    db.settings.maintenance = false;
+    db.settings.maintenance =
+      false;
 
-    saveDB();
+    saveDatabase();
 
     res.json({
       success: true,
@@ -1511,12 +2096,15 @@ app.get(
     res.json({
       maintenance:
         Boolean(
-          db.settings.maintenance
+          db.settings
+            .maintenance
         ),
       title:
-        db.settings.maintenanceTitle,
+        db.settings
+          .maintenanceTitle,
       message:
-        db.settings.maintenanceMessage
+        db.settings
+          .maintenanceMessage
     });
   }
 );
@@ -1531,7 +2119,10 @@ app.get(
     res.json({
       ok: true,
       service: "NEXUS",
-      time: new Date().toISOString()
+      time:
+        new Date().toISOString(),
+      users:
+        db.users.length
     });
   }
 );
@@ -1542,7 +2133,10 @@ app.get(
 
 app.use(
   express.static(
-    path.join(__dirname, "public")
+    path.join(
+      __dirname,
+      "public"
+    )
   )
 );
 
@@ -1570,11 +2164,13 @@ app.get(
 app.use(
   (error, req, res, next) => {
     console.error(
-      "Unhandled server error:",
+      "Unhandled error:",
       error
     );
 
-    if (res.headersSent) {
+    if (
+      res.headersSent
+    ) {
       return next(error);
     }
 
@@ -1594,7 +2190,19 @@ app.listen(
   "0.0.0.0",
   () => {
     console.log(
-      `NEXUS running on port ${PORT}`
+      "================================="
+    );
+
+    console.log(
+      "        NEXUS IS ONLINE"
+    );
+
+    console.log(
+      "================================="
+    );
+
+    console.log(
+      `Port: ${PORT}`
     );
 
     console.log(
@@ -1608,11 +2216,20 @@ app.listen(
     );
 
     console.log(
-      `Real web search: ${
-        process.env.BRAVE_SEARCH_API_KEY
-          ? "enabled"
+      `Web search provider: ${
+        process.env
+          .BRAVE_SEARCH_API_KEY
+          ? "Brave + Wikipedia"
           : "Wikipedia fallback"
       }`
+    );
+
+    console.log(
+      `Database: ${DB_FILE}`
+    );
+
+    console.log(
+      "================================="
     );
   }
 );
