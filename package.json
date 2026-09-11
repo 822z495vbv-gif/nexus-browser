@@ -1,16 +1,17 @@
 {
-  "name": "nexus-search",
-  "version": "3.0.0",
-  "description": "NEXUS Search",
+  "name": "nexus",
+  "version": "1.0.0",
+  "description": "NEXUS search and AI web app",
   "main": "server.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "openai": "^6.0.0"
   }
 }
