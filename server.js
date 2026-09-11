@@ -10,39 +10,24 @@ const PORT = process.env.PORT || 3000;
 
 const ADMIN_USERNAME = "CALSGC";
 
-const PUBLIC_DIR = path.join(
-  process.cwd(),
-  "public"
-);
-
-const DATA_DIR = path.join(
-  process.cwd(),
-  "data"
-);
-
-const DB_FILE = path.join(
-  DATA_DIR,
-  "db.json"
-);
-
+const PUBLIC_DIR = path.join(process.cwd(), "public");
+const DATA_DIR = path.join(process.cwd(), "data");
+const DB_FILE = path.join(DATA_DIR, "db.json");
 
 /* =========================
    OPENAI
 ========================= */
 
-const OPENAI_API_KEY =
-  process.env.OPENAI_API_KEY || "";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
 const AI_MODEL =
-  process.env.OPENAI_MODEL ||
-  "gpt-5.6-luna";
+  process.env.OPENAI_MODEL || "gpt-5.6-luna";
 
 const openai = OPENAI_API_KEY
   ? new OpenAI({
       apiKey: OPENAI_API_KEY
     })
   : null;
-
 
 /* =========================
    APP
@@ -59,7 +44,6 @@ app.use(
     extended: false
   })
 );
-
 
 /* =========================
    DATABASE
@@ -93,40 +77,29 @@ function loadDatabase() {
 
       fs.writeFileSync(
         DB_FILE,
-        JSON.stringify(
-          fresh,
-          null,
-          2
-        )
+        JSON.stringify(fresh, null, 2)
       );
 
       return fresh;
     }
 
-    const raw =
-      fs.readFileSync(
-        DB_FILE,
-        "utf8"
-      );
+    const raw = fs.readFileSync(
+      DB_FILE,
+      "utf8"
+    );
 
-    const parsed =
-      JSON.parse(raw);
+    const parsed = JSON.parse(raw);
 
     return {
       ...defaultDatabase(),
       ...parsed,
-      users:
-        Array.isArray(parsed.users)
-          ? parsed.users
-          : [],
-      sessions:
-        parsed.sessions || {},
-      history:
-        parsed.history || {},
-      saved:
-        parsed.saved || {}
+      users: Array.isArray(parsed.users)
+        ? parsed.users
+        : [],
+      sessions: parsed.sessions || {},
+      history: parsed.history || {},
+      saved: parsed.saved || {}
     };
-
   } catch {
     return defaultDatabase();
   }
@@ -137,34 +110,22 @@ let db = loadDatabase();
 function saveDatabase() {
   fs.writeFileSync(
     DB_FILE,
-    JSON.stringify(
-      db,
-      null,
-      2
-    )
+    JSON.stringify(db, null, 2)
   );
 }
-
 
 /* =========================
    HELPERS
 ========================= */
 
-function cleanText(
-  value,
-  max = 5000
-) {
-  return String(
-    value ?? ""
-  )
+function cleanText(value, max = 5000) {
+  return String(value ?? "")
     .trim()
     .slice(0, max);
 }
 
 function escapeHTML(value) {
-  return String(
-    value ?? ""
-  )
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -173,12 +134,27 @@ function escapeHTML(value) {
 }
 
 function stripHTML(value) {
-  return String(
-    value ?? ""
-  )
+  return String(value ?? "")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function safeURL(value) {
+  try {
+    const url = new URL(String(value));
+
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:"
+    ) {
+      return null;
+    }
+
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function publicUser(user) {
@@ -213,24 +189,26 @@ function verifyPassword(
   storedHash,
   salt
 ) {
-  const hash =
-    crypto
-      .scryptSync(
-        password,
-        salt,
-        64
-      )
-      .toString("hex");
+  try {
+    const hash =
+      crypto
+        .scryptSync(
+          password,
+          salt,
+          64
+        )
+        .toString("hex");
 
-  return crypto.timingSafeEqual(
-    Buffer.from(hash, "hex"),
-    Buffer.from(storedHash, "hex")
-  );
+    return crypto.timingSafeEqual(
+      Buffer.from(hash, "hex"),
+      Buffer.from(storedHash, "hex")
+    );
+  } catch {
+    return false;
+  }
 }
 
-function createSession(
-  userId
-) {
+function createSession(userId) {
   const token =
     crypto.randomBytes(48).toString("hex");
 
@@ -253,14 +231,13 @@ function createSession(
   return token;
 }
 
-function getCookie(
-  req,
-  name
-) {
+function getCookie(req, name) {
   const cookies =
     req.headers.cookie;
 
-  if (!cookies) return null;
+  if (!cookies) {
+    return null;
+  }
 
   const parts =
     cookies.split(";");
@@ -270,25 +247,29 @@ function getCookie(
       part.trim().split("=");
 
     if (key === name) {
-      return decodeURIComponent(
-        rest.join("=")
-      );
+      try {
+        return decodeURIComponent(
+          rest.join("=")
+        );
+      } catch {
+        return null;
+      }
     }
   }
 
   return null;
 }
 
-function getCurrentUser(
-  req
-) {
+function getCurrentUser(req) {
   const token =
     getCookie(
       req,
       "nexus_session"
     );
 
-  if (!token) return null;
+  if (!token) {
+    return null;
+  }
 
   const tokenHash =
     crypto
@@ -299,7 +280,9 @@ function getCurrentUser(
   const session =
     db.sessions[tokenHash];
 
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
 
   if (
     session.expiresAt &&
@@ -343,9 +326,7 @@ function setSessionCookie(
   );
 }
 
-function clearSessionCookie(
-  res
-) {
+function clearSessionCookie(res) {
   res.setHeader(
     "Set-Cookie",
     [
@@ -374,7 +355,8 @@ function requireAuth(
 
   if (!user) {
     return res.status(401).json({
-      error: "You must be signed in."
+      error:
+        "You must be signed in."
     });
   }
 
@@ -393,7 +375,8 @@ function requireAdmin(
 
   if (!user) {
     return res.status(401).json({
-      error: "You must be signed in."
+      error:
+        "You must be signed in."
     });
   }
 
@@ -402,7 +385,8 @@ function requireAdmin(
     ADMIN_USERNAME.toLowerCase()
   ) {
     return res.status(403).json({
-      error: "Admin access required."
+      error:
+        "Admin access required."
     });
   }
 
@@ -411,6 +395,43 @@ function requireAdmin(
   next();
 }
 
+/* =========================
+   HISTORY HELPER
+========================= */
+
+function addHistory(
+  userId,
+  data
+) {
+  db.history[userId] ||= [];
+
+  db.history[userId].unshift({
+    id: crypto.randomUUID(),
+    query: cleanText(
+      data.query,
+      500
+    ),
+    title: cleanText(
+      data.title || data.query,
+      500
+    ),
+    url: safeURL(data.url) || "",
+    type:
+      cleanText(
+        data.type || "web",
+        30
+      ),
+    createdAt: Date.now()
+  });
+
+  db.history[userId] =
+    db.history[userId].slice(
+      0,
+      100
+    );
+
+  saveDatabase();
+}
 
 /* =========================
    MAINTENANCE
@@ -418,7 +439,6 @@ function requireAdmin(
 
 app.use(
   (req, res, next) => {
-
     const publicPaths = [
       "/api/login",
       "/api/register",
@@ -441,7 +461,6 @@ app.use(
           ADMIN_USERNAME.toLowerCase();
 
       if (!isAdminUser) {
-
         if (
           req.path.startsWith(
             "/api/"
@@ -518,7 +537,6 @@ app.use(
   }
 );
 
-
 /* =========================
    AUTH
 ========================= */
@@ -526,7 +544,6 @@ app.use(
 app.post(
   "/api/register",
   (req, res) => {
-
     const username =
       cleanText(
         req.body.username,
@@ -587,13 +604,8 @@ app.post(
 
     db.users.push(user);
 
-    if (!db.history[user.id]) {
-      db.history[user.id] = [];
-    }
-
-    if (!db.saved[user.id]) {
-      db.saved[user.id] = [];
-    }
+    db.history[user.id] ||= [];
+    db.saved[user.id] ||= [];
 
     const token =
       createSession(user.id);
@@ -611,11 +623,9 @@ app.post(
   }
 );
 
-
 app.post(
   "/api/login",
   (req, res) => {
-
     const username =
       cleanText(
         req.body.username,
@@ -662,11 +672,9 @@ app.post(
   }
 );
 
-
 app.post(
   "/api/logout",
   (req, res) => {
-
     const token =
       getCookie(
         req,
@@ -674,7 +682,6 @@ app.post(
       );
 
     if (token) {
-
       const tokenHash =
         crypto
           .createHash("sha256")
@@ -696,17 +703,16 @@ app.post(
   }
 );
 
-
 app.get(
   "/api/me",
   (req, res) => {
-
     const user =
       getCurrentUser(req);
 
     if (!user) {
       return res.status(401).json({
-        error: "Not signed in."
+        error:
+          "Not signed in."
       });
     }
 
@@ -716,18 +722,15 @@ app.get(
   }
 );
 
-
 /* =========================
-   AI BACKEND
+   AI
 ========================= */
 
 app.post(
   "/api/ai",
   requireAuth,
   async (req, res) => {
-
     try {
-
       if (!openai) {
         return res.status(503).json({
           error:
@@ -753,7 +756,7 @@ app.post(
           model: AI_MODEL,
 
           instructions:
-            "You are NEXUS AI, the built-in assistant for the NEXUS search engine. Give clear, useful, accurate answers. Be concise unless the user asks for detail. Use simple formatting with short paragraphs and bullet points when useful. Do not pretend to have searched the web unless a web-search tool is actually enabled.",
+            "You are NEXUS AI, the built-in assistant for the NEXUS search engine. Give clear, useful, accurate answers. Be concise unless the user asks for detail. Use simple formatting with short paragraphs and bullet points when useful. Do not claim to have searched the web unless a web-search tool is actually enabled.",
 
           input: query,
 
@@ -764,13 +767,27 @@ app.post(
         response.output_text ||
         "I couldn't generate an answer.";
 
+      addHistory(
+        req.user.id,
+        {
+          query,
+          title:
+            `AI: ${query}`,
+          url:
+            `${req.protocol}://${req.get(
+              "host"
+            )}/?q=${encodeURIComponent(
+              query
+            )}`,
+          type: "ai"
+        }
+      );
+
       res.json({
         answer,
         model: AI_MODEL
       });
-
     } catch (error) {
-
       console.error(
         "NEXUS AI ERROR:",
         error
@@ -784,16 +801,15 @@ app.post(
   }
 );
 
-
 /* =========================
-   SEARCH
+   WEB SEARCH
+   WIKIPEDIA
 ========================= */
 
 app.get(
   "/api/search",
   requireAuth,
   async (req, res) => {
-
     const query =
       cleanText(
         req.query.q,
@@ -808,131 +824,635 @@ app.get(
     }
 
     try {
-
-      const url =
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+      const apiURL =
+        "https://en.wikipedia.org/w/api.php" +
+        `?action=query` +
+        `&list=search` +
+        `&srsearch=${encodeURIComponent(
           query
-        )}`;
+        )}` +
+        `&format=json` +
+        `&utf8=1` +
+        `&srlimit=12` +
+        `&origin=*`;
 
       const response =
-        await fetch(url, {
+        await fetch(apiURL, {
           headers: {
             "User-Agent":
               "NEXUS/1.0"
           }
         });
 
-      if (response.ok) {
+      if (!response.ok) {
+        throw new Error(
+          `Wikipedia returned ${response.status}`
+        );
+      }
 
-        const data =
-          await response.json();
+      const data =
+        await response.json();
 
-        const result = {
-          title:
-            data.title ||
-            query,
+      const pages =
+        data?.query?.search || [];
 
-          description:
+      const results =
+        pages.map(item => {
+          const title =
             stripHTML(
-              data.extract ||
-              "No description available."
-            ),
+              item.title
+            );
 
-          url:
-            data.content_urls
-              ?.desktop
-              ?.page ||
+          const url =
             `https://en.wikipedia.org/wiki/${encodeURIComponent(
-              query
-            )}`,
+              title.replaceAll(
+                " ",
+                "_"
+              )
+            )}`;
 
-          image:
-            data.thumbnail?.source ||
-            null,
-
-          source:
-            "Wikipedia"
-        };
-
-        db.history[
-          req.user.id
-        ] ||= [];
-
-        db.history[
-          req.user.id
-        ].unshift({
-          id:
-            crypto.randomUUID(),
-          query,
-          title:
-            result.title,
-          url:
-            result.url,
-          createdAt:
-            Date.now()
+          return {
+            title,
+            description:
+              stripHTML(
+                item.snippet ||
+                "No description available."
+              ),
+            url,
+            source:
+              "Wikipedia"
+          };
         });
 
-        db.history[
-          req.user.id
-        ] =
-          db.history[
-            req.user.id
-          ].slice(0, 100);
-
-        saveDatabase();
-
+      if (!results.length) {
         return res.json({
-          mode: "result",
-          result
+          mode: "results",
+          results: [],
+          query
         });
       }
 
+      addHistory(
+        req.user.id,
+        {
+          query,
+          title:
+            results[0].title,
+          url:
+            results[0].url,
+          type: "web"
+        }
+      );
+
+      return res.json({
+        mode: "results",
+        results,
+        query
+      });
     } catch (error) {
       console.error(
-        "SEARCH ERROR:",
+        "WEB SEARCH ERROR:",
         error
       );
+
+      return res.status(502).json({
+        error:
+          "NEXUS could not reach its web search provider right now."
+      });
     }
-
-    const fallback =
-      `https://www.google.com/search?q=${encodeURIComponent(
-        query
-      )}`;
-
-    db.history[
-      req.user.id
-    ] ||= [];
-
-    db.history[
-      req.user.id
-    ].unshift({
-      id:
-        crypto.randomUUID(),
-      query,
-      title:
-        query,
-      url:
-        fallback,
-      createdAt:
-        Date.now()
-    });
-
-    db.history[
-      req.user.id
-    ] =
-      db.history[
-        req.user.id
-      ].slice(0, 100);
-
-    saveDatabase();
-
-    res.json({
-      mode: "fallback",
-      fallback
-    });
   }
 );
 
+/* =========================
+   NEWS SEARCH
+   GDELT
+========================= */
+
+app.get(
+  "/api/news",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanText(
+        req.query.q,
+        300
+      );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
+    }
+
+    try {
+      const apiURL =
+        "https://api.gdeltproject.org/api/v2/doc/doc" +
+        `?query=${encodeURIComponent(
+          query
+        )}` +
+        `&mode=ArtList` +
+        `&maxrecords=20` +
+        `&format=json` +
+        `&sort=HybridRel`;
+
+      const response =
+        await fetch(apiURL, {
+          headers: {
+            "User-Agent":
+              "NEXUS/1.0"
+          }
+        });
+
+      if (!response.ok) {
+        throw new Error(
+          `GDELT returned ${response.status}`
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const articles =
+        Array.isArray(
+          data?.articles
+        )
+          ? data.articles
+          : [];
+
+      const results =
+        articles
+          .map(article => {
+            const url =
+              safeURL(
+                article.url
+              );
+
+            if (!url) {
+              return null;
+            }
+
+            return {
+              title:
+                cleanText(
+                  article.title ||
+                    "Untitled article",
+                  500
+                ),
+
+              description:
+                cleanText(
+                  article.seendate
+                    ? `Published ${formatGDELTDate(
+                        article.seendate
+                      )}`
+                    : "News article",
+                  1000
+                ),
+
+              url,
+
+              source:
+                cleanText(
+                  article.domain ||
+                    article.sourcecountry ||
+                    "News source",
+                  200
+                ),
+
+              image:
+                safeURL(
+                  article.socialimage
+                ) || null,
+
+              date:
+                article.seendate ||
+                null
+            };
+          })
+          .filter(Boolean);
+
+      if (results.length) {
+        addHistory(
+          req.user.id,
+          {
+            query,
+            title:
+              results[0].title,
+            url:
+              results[0].url,
+            type: "news"
+          }
+        );
+      } else {
+        addHistory(
+          req.user.id,
+          {
+            query,
+            title:
+              `News: ${query}`,
+            url:
+              `${req.protocol}://${req.get(
+                "host"
+              )}/`,
+            type: "news"
+          }
+        );
+      }
+
+      res.json({
+        mode: "results",
+        results,
+        query
+      });
+    } catch (error) {
+      console.error(
+        "NEWS SEARCH ERROR:",
+        error
+      );
+
+      res.status(502).json({
+        error:
+          "NEXUS could not reach its news provider right now."
+      });
+    }
+  }
+);
+
+function formatGDELTDate(value) {
+  const text =
+    String(value || "");
+
+  if (text.length < 8) {
+    return text;
+  }
+
+  const match =
+    text.match(
+      /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/
+    );
+
+  if (!match) {
+    return text;
+  }
+
+  const [
+    ,
+    year,
+    month,
+    day,
+    hour,
+    minute
+  ] = match;
+
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+/* =========================
+   IMAGE SEARCH
+   WIKIMEDIA COMMONS
+========================= */
+
+app.get(
+  "/api/images",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanText(
+        req.query.q,
+        300
+      );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
+    }
+
+    try {
+      const apiURL =
+        "https://commons.wikimedia.org/w/api.php" +
+        `?action=query` +
+        `&generator=search` +
+        `&gsrsearch=${encodeURIComponent(
+          query
+        )}` +
+        `&gsrnamespace=6` +
+        `&gsrlimit=30` +
+        `&prop=imageinfo` +
+        `&iiprop=url|mime|size|extmetadata` +
+        `&iiurlwidth=700` +
+        `&format=json` +
+        `&origin=*`;
+
+      const response =
+        await fetch(apiURL, {
+          headers: {
+            "User-Agent":
+              "NEXUS/1.0"
+          }
+        });
+
+      if (!response.ok) {
+        throw new Error(
+          `Commons returned ${response.status}`
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const pages =
+        Object.values(
+          data?.query?.pages || {}
+        );
+
+      const results =
+        pages
+          .map(page => {
+            const info =
+              page.imageinfo?.[0];
+
+            if (!info) {
+              return null;
+            }
+
+            const mime =
+              String(
+                info.mime || ""
+              ).toLowerCase();
+
+            if (
+              !mime.startsWith(
+                "image/"
+              )
+            ) {
+              return null;
+            }
+
+            const imageURL =
+              safeURL(
+                info.thumburl ||
+                  info.url
+              );
+
+            const sourceURL =
+              safeURL(
+                info.descriptionurl
+              );
+
+            if (
+              !imageURL ||
+              !sourceURL
+            ) {
+              return null;
+            }
+
+            const metadata =
+              info.extmetadata || {};
+
+            const artist =
+              stripHTML(
+                metadata.Artist?.value ||
+                  ""
+              );
+
+            return {
+              title:
+                cleanText(
+                  page.title?.replace(
+                    /^File:/,
+                    ""
+                  ) ||
+                    "Image",
+                  500
+                ),
+
+              url: imageURL,
+
+              source:
+                sourceURL,
+
+              width:
+                info.width || null,
+
+              height:
+                info.height || null,
+
+              artist:
+                cleanText(
+                  artist,
+                  300
+                )
+            };
+          })
+          .filter(Boolean);
+
+      addHistory(
+        req.user.id,
+        {
+          query,
+          title:
+            `Images: ${query}`,
+          url:
+            results[0]?.source ||
+            `${req.protocol}://${req.get(
+              "host"
+            )}/`,
+          type: "images"
+        }
+      );
+
+      res.json({
+        mode: "results",
+        results,
+        query
+      });
+    } catch (error) {
+      console.error(
+        "IMAGE SEARCH ERROR:",
+        error
+      );
+
+      res.status(502).json({
+        error:
+          "NEXUS could not reach its image provider right now."
+      });
+    }
+  }
+);
+
+/* =========================
+   VIDEO SEARCH
+   WIKIMEDIA COMMONS
+========================= */
+
+app.get(
+  "/api/videos",
+  requireAuth,
+  async (req, res) => {
+    const query =
+      cleanText(
+        req.query.q,
+        300
+      );
+
+    if (!query) {
+      return res.status(400).json({
+        error:
+          "Search query is required."
+      });
+    }
+
+    try {
+      const searchQuery =
+        `${query} filetype:video`;
+
+      const apiURL =
+        "https://commons.wikimedia.org/w/api.php" +
+        `?action=query` +
+        `&generator=search` +
+        `&gsrsearch=${encodeURIComponent(
+          searchQuery
+        )}` +
+        `&gsrnamespace=6` +
+        `&gsrlimit=30` +
+        `&prop=imageinfo` +
+        `&iiprop=url|mime|size|extmetadata` +
+        `&iiurlwidth=640` +
+        `&format=json` +
+        `&origin=*`;
+
+      const response =
+        await fetch(apiURL, {
+          headers: {
+            "User-Agent":
+              "NEXUS/1.0"
+          }
+        });
+
+      if (!response.ok) {
+        throw new Error(
+          `Commons returned ${response.status}`
+        );
+      }
+
+      const data =
+        await response.json();
+
+      const pages =
+        Object.values(
+          data?.query?.pages || {}
+        );
+
+      const results =
+        pages
+          .map(page => {
+            const info =
+              page.imageinfo?.[0];
+
+            if (!info) {
+              return null;
+            }
+
+            const mime =
+              String(
+                info.mime || ""
+              ).toLowerCase();
+
+            if (
+              !mime.startsWith(
+                "video/"
+              )
+            ) {
+              return null;
+            }
+
+            const videoURL =
+              safeURL(
+                info.url
+              );
+
+            if (!videoURL) {
+              return null;
+            }
+
+            const poster =
+              safeURL(
+                info.thumburl
+              );
+
+            const source =
+              safeURL(
+                info.descriptionurl
+              );
+
+            return {
+              title:
+                cleanText(
+                  page.title?.replace(
+                    /^File:/,
+                    ""
+                  ) ||
+                    "Video",
+                  500
+                ),
+
+              url:
+                videoURL,
+
+              poster:
+                poster,
+
+              source:
+                source ||
+                videoURL,
+
+              mime,
+
+              width:
+                info.width || null,
+
+              height:
+                info.height || null
+            };
+          })
+          .filter(Boolean);
+
+      addHistory(
+        req.user.id,
+        {
+          query,
+          title:
+            `Videos: ${query}`,
+          url:
+            results[0]?.source ||
+            `${req.protocol}://${req.get(
+              "host"
+            )}/`,
+          type: "videos"
+        }
+      );
+
+      res.json({
+        mode: "results",
+        results,
+        query
+      });
+    } catch (error) {
+      console.error(
+        "VIDEO SEARCH ERROR:",
+        error
+      );
+
+      res.status(502).json({
+        error:
+          "NEXUS could not reach its video provider right now."
+      });
+    }
+  }
+);
 
 /* =========================
    HISTORY
@@ -942,7 +1462,6 @@ app.get(
   "/api/history",
   requireAuth,
   (req, res) => {
-
     res.json({
       history:
         db.history[
@@ -952,12 +1471,10 @@ app.get(
   }
 );
 
-
 app.delete(
   "/api/history",
   requireAuth,
   (req, res) => {
-
     db.history[
       req.user.id
     ] = [];
@@ -970,7 +1487,6 @@ app.delete(
   }
 );
 
-
 /* =========================
    SAVED
 ========================= */
@@ -979,7 +1495,6 @@ app.get(
   "/api/saved",
   requireAuth,
   (req, res) => {
-
     res.json({
       saved:
         db.saved[
@@ -989,12 +1504,10 @@ app.get(
   }
 );
 
-
 app.post(
   "/api/saved",
   requireAuth,
   (req, res) => {
-
     const title =
       cleanText(
         req.body.title,
@@ -1002,15 +1515,14 @@ app.post(
       );
 
     const url =
-      cleanText(
-        req.body.url,
-        2000
+      safeURL(
+        req.body.url
       );
 
     if (!title || !url) {
       return res.status(400).json({
         error:
-          "Title and URL are required."
+          "A valid title and URL are required."
       });
     }
 
@@ -1049,7 +1561,10 @@ app.post(
     ] =
       db.saved[
         req.user.id
-      ].slice(0, 200);
+      ].slice(
+        0,
+        200
+      );
 
     saveDatabase();
 
@@ -1059,12 +1574,10 @@ app.post(
   }
 );
 
-
 app.delete(
   "/api/saved",
   requireAuth,
   (req, res) => {
-
     db.saved[
       req.user.id
     ] = [];
@@ -1077,12 +1590,10 @@ app.delete(
   }
 );
 
-
 app.delete(
   "/api/saved/:id",
   requireAuth,
   (req, res) => {
-
     db.saved[
       req.user.id
     ] ||= [];
@@ -1106,7 +1617,6 @@ app.delete(
   }
 );
 
-
 /* =========================
    ADMIN
 ========================= */
@@ -1115,7 +1625,6 @@ app.get(
   "/api/admin/status",
   requireAdmin,
   (req, res) => {
-
     res.json({
       maintenance:
         db.maintenance.enabled,
@@ -1137,12 +1646,10 @@ app.get(
   }
 );
 
-
 app.post(
   "/api/admin/lock",
   requireAdmin,
   (req, res) => {
-
     db.maintenance = {
       enabled: true,
 
@@ -1169,12 +1676,10 @@ app.post(
   }
 );
 
-
 app.post(
   "/api/admin/unlock",
   requireAdmin,
   (req, res) => {
-
     db.maintenance.enabled =
       false;
 
@@ -1186,15 +1691,13 @@ app.post(
   }
 );
 
-
 /* =========================
-   PUBLIC MAINTENANCE STATUS
+   PUBLIC MAINTENANCE
 ========================= */
 
 app.get(
   "/api/maintenance",
   (req, res) => {
-
     res.json({
       enabled:
         db.maintenance.enabled,
@@ -1208,7 +1711,6 @@ app.get(
   }
 );
 
-
 /* =========================
    STATIC FILES
 ========================= */
@@ -1219,7 +1721,6 @@ app.use(
   )
 );
 
-
 /* =========================
    EXPRESS 5 FALLBACK
 ========================= */
@@ -1227,7 +1728,6 @@ app.use(
 app.get(
   "*splat",
   (req, res) => {
-
     res.sendFile(
       path.join(
         PUBLIC_DIR,
@@ -1237,7 +1737,6 @@ app.get(
   }
 );
 
-
 /* =========================
    START
 ========================= */
@@ -1245,7 +1744,6 @@ app.get(
 app.listen(
   PORT,
   () => {
-
     console.log(
       `NEXUS running on port ${PORT}`
     );
