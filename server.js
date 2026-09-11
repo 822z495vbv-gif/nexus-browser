@@ -1,301 +1,51 @@
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const crypto = require("crypto");
+import express from "express";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
+import OpenAI from "openai";
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
+
 const ADMIN_USERNAME = "CALSGC";
 
-const PUBLIC_DIR = path.join(__dirname, "public");
-const DATA_DIR = path.join(__dirname, "data");
-const DB_FILE = path.join(DATA_DIR, "nexus.json");
+const PUBLIC_DIR = path.join(
+  process.cwd(),
+  "public"
+);
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA_DIR = path.join(
+  process.cwd(),
+  "data"
+);
+
+const DB_FILE = path.join(
+  DATA_DIR,
+  "db.json"
+);
+
 
 /* =========================
-   DATABASE
+   OPENAI
 ========================= */
 
-function freshDB() {
-  return {
-    users: [],
-    sessions: [],
-    history: {},
-    saved: {},
-    maintenance: {
-      locked: false,
-      title: "NEXUS is under maintenance",
-      message: "We're making improvements. Please check back soon."
-    }
-  };
-}
+const OPENAI_API_KEY =
+  process.env.OPENAI_API_KEY || "";
 
-function loadDB() {
-  try {
-    if (!fs.existsSync(DB_FILE)) {
-      return freshDB();
-    }
+const AI_MODEL =
+  process.env.OPENAI_MODEL ||
+  "gpt-5.6-luna";
 
-    const data = JSON.parse(
-      fs.readFileSync(DB_FILE, "utf8")
-    );
+const openai = OPENAI_API_KEY
+  ? new OpenAI({
+      apiKey: OPENAI_API_KEY
+    })
+  : null;
 
-    const base = freshDB();
-
-    return {
-      ...base,
-      ...data,
-      users: Array.isArray(data.users)
-        ? data.users
-        : [],
-      sessions: Array.isArray(data.sessions)
-        ? data.sessions
-        : [],
-      history: data.history || {},
-      saved: data.saved || {},
-      maintenance: {
-        ...base.maintenance,
-        ...(data.maintenance || {})
-      }
-    };
-  } catch (error) {
-    console.error("Database load error:", error.message);
-    return freshDB();
-  }
-}
-
-let db = loadDB();
-
-function saveDB() {
-  try {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify(db, null, 2)
-    );
-  } catch (error) {
-    console.error("Database save error:", error.message);
-  }
-}
 
 /* =========================
-   HELPERS
-========================= */
-
-function cleanText(value, max = 500) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
-}
-
-function escapeHTML(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function stripHTML(value) {
-  return String(value || "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/* =========================
-   PUBLIC USER
-========================= */
-
-function publicUser(user) {
-  if (!user) return null;
-
-  return {
-    id: user.id,
-    username: user.username,
-    createdAt: user.createdAt,
-    isAdmin: isAdmin(user)
-  };
-}
-
-/* =========================
-   PASSWORDS
-========================= */
-
-function passwordHash(password, salt) {
-  return crypto
-    .scryptSync(password, salt, 64)
-    .toString("hex");
-}
-
-function createPassword(password) {
-  const salt = crypto
-    .randomBytes(16)
-    .toString("hex");
-
-  return {
-    salt,
-    hash: passwordHash(password, salt)
-  };
-}
-
-function verifyPassword(password, salt, hash) {
-  try {
-    const actual = passwordHash(
-      password,
-      salt
-    );
-
-    const a = Buffer.from(actual, "hex");
-    const b = Buffer.from(hash, "hex");
-
-    if (a.length !== b.length) {
-      return false;
-    }
-
-    return crypto.timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
-/* =========================
-   SESSIONS
-========================= */
-
-function createToken() {
-  return crypto
-    .randomBytes(32)
-    .toString("hex");
-}
-
-function tokenHash(token) {
-  return crypto
-    .createHash("sha256")
-    .update(token)
-    .digest("hex");
-}
-
-function getToken(req) {
-  const cookies = req.headers.cookie || "";
-
-  const match = cookies
-    .split(";")
-    .map(x => x.trim())
-    .find(
-      x => x.startsWith("nexus_session=")
-    );
-
-  if (!match) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(
-      match
-        .split("=")
-        .slice(1)
-        .join("=")
-    );
-  } catch {
-    return null;
-  }
-}
-
-function getUser(req) {
-  const token = getToken(req);
-
-  if (!token) {
-    return null;
-  }
-
-  const hashed = tokenHash(token);
-
-  const session = db.sessions.find(
-    s => s.token === hashed
-  );
-
-  if (!session) {
-    return null;
-  }
-
-  return (
-    db.users.find(
-      u => u.id === session.userId
-    ) || null
-  );
-}
-
-function isAdmin(user) {
-  return !!(
-    user &&
-    typeof user.username === "string" &&
-    user.username.toLowerCase() ===
-      ADMIN_USERNAME.toLowerCase()
-  );
-}
-
-function requireAuth(req, res, next) {
-  const user = getUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      error: "You must be logged in."
-    });
-  }
-
-  req.user = user;
-  next();
-}
-
-function requireAdmin(req, res, next) {
-  const user = getUser(req);
-
-  if (!user || !isAdmin(user)) {
-    return res.status(403).json({
-      error: "Admin access denied."
-    });
-  }
-
-  req.user = user;
-  next();
-}
-
-/* =========================
-   COOKIES
-========================= */
-
-function setSessionCookie(res, token) {
-  const secure =
-    process.env.NODE_ENV === "production"
-      ? "; Secure"
-      : "";
-
-  res.setHeader(
-    "Set-Cookie",
-    `nexus_session=${encodeURIComponent(
-      token
-    )}; Path=/; HttpOnly; SameSite=Lax${secure}`
-  );
-}
-
-function clearSessionCookie(res) {
-  res.setHeader(
-    "Set-Cookie",
-    "nexus_session=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax"
-  );
-}
-
-/* =========================
-   EXPRESS
+   APP
 ========================= */
 
 app.use(
@@ -304,170 +54,736 @@ app.use(
   })
 );
 
+app.use(
+  express.urlencoded({
+    extended: false
+  })
+);
+
+
+/* =========================
+   DATABASE
+========================= */
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, {
+    recursive: true
+  });
+}
+
+function defaultDatabase() {
+  return {
+    users: [],
+    sessions: {},
+    history: {},
+    saved: {},
+    maintenance: {
+      enabled: false,
+      title: "NEXUS is temporarily offline",
+      message:
+        "The website is currently undergoing maintenance."
+    }
+  };
+}
+
+function loadDatabase() {
+  try {
+    if (!fs.existsSync(DB_FILE)) {
+      const fresh = defaultDatabase();
+
+      fs.writeFileSync(
+        DB_FILE,
+        JSON.stringify(
+          fresh,
+          null,
+          2
+        )
+      );
+
+      return fresh;
+    }
+
+    const raw =
+      fs.readFileSync(
+        DB_FILE,
+        "utf8"
+      );
+
+    const parsed =
+      JSON.parse(raw);
+
+    return {
+      ...defaultDatabase(),
+      ...parsed,
+      users:
+        Array.isArray(parsed.users)
+          ? parsed.users
+          : [],
+      sessions:
+        parsed.sessions || {},
+      history:
+        parsed.history || {},
+      saved:
+        parsed.saved || {}
+    };
+
+  } catch {
+    return defaultDatabase();
+  }
+}
+
+let db = loadDatabase();
+
+function saveDatabase() {
+  fs.writeFileSync(
+    DB_FILE,
+    JSON.stringify(
+      db,
+      null,
+      2
+    )
+  );
+}
+
+
+/* =========================
+   HELPERS
+========================= */
+
+function cleanText(
+  value,
+  max = 5000
+) {
+  return String(
+    value ?? ""
+  )
+    .trim()
+    .slice(0, max);
+}
+
+function escapeHTML(value) {
+  return String(
+    value ?? ""
+  )
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function stripHTML(value) {
+  return String(
+    value ?? ""
+  )
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    isAdmin:
+      user.username.toLowerCase() ===
+      ADMIN_USERNAME.toLowerCase()
+  };
+}
+
+function hashPassword(
+  password,
+  salt = crypto.randomBytes(16).toString("hex")
+) {
+  const hash =
+    crypto.scryptSync(
+      password,
+      salt,
+      64
+    ).toString("hex");
+
+  return {
+    salt,
+    hash
+  };
+}
+
+function verifyPassword(
+  password,
+  storedHash,
+  salt
+) {
+  const hash =
+    crypto
+      .scryptSync(
+        password,
+        salt,
+        64
+      )
+      .toString("hex");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(hash, "hex"),
+    Buffer.from(storedHash, "hex")
+  );
+}
+
+function createSession(
+  userId
+) {
+  const token =
+    crypto.randomBytes(48).toString("hex");
+
+  const tokenHash =
+    crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+  db.sessions[tokenHash] = {
+    userId,
+    createdAt: Date.now(),
+    expiresAt:
+      Date.now() +
+      1000 * 60 * 60 * 24 * 30
+  };
+
+  saveDatabase();
+
+  return token;
+}
+
+function getCookie(
+  req,
+  name
+) {
+  const cookies =
+    req.headers.cookie;
+
+  if (!cookies) return null;
+
+  const parts =
+    cookies.split(";");
+
+  for (const part of parts) {
+    const [key, ...rest] =
+      part.trim().split("=");
+
+    if (key === name) {
+      return decodeURIComponent(
+        rest.join("=")
+      );
+    }
+  }
+
+  return null;
+}
+
+function getCurrentUser(
+  req
+) {
+  const token =
+    getCookie(
+      req,
+      "nexus_session"
+    );
+
+  if (!token) return null;
+
+  const tokenHash =
+    crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+  const session =
+    db.sessions[tokenHash];
+
+  if (!session) return null;
+
+  if (
+    session.expiresAt &&
+    session.expiresAt < Date.now()
+  ) {
+    delete db.sessions[tokenHash];
+    saveDatabase();
+    return null;
+  }
+
+  return (
+    db.users.find(
+      user =>
+        user.id ===
+        session.userId
+    ) || null
+  );
+}
+
+function setSessionCookie(
+  res,
+  token
+) {
+  res.setHeader(
+    "Set-Cookie",
+    [
+      `nexus_session=${encodeURIComponent(
+        token
+      )}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      `Max-Age=${60 * 60 * 24 * 30}`,
+      process.env.NODE_ENV ===
+      "production"
+        ? "Secure"
+        : ""
+    ]
+      .filter(Boolean)
+      .join("; ")
+  );
+}
+
+function clearSessionCookie(
+  res
+) {
+  res.setHeader(
+    "Set-Cookie",
+    [
+      "nexus_session=",
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      "Max-Age=0",
+      process.env.NODE_ENV ===
+      "production"
+        ? "Secure"
+        : ""
+    ]
+      .filter(Boolean)
+      .join("; ")
+  );
+}
+
+function requireAuth(
+  req,
+  res,
+  next
+) {
+  const user =
+    getCurrentUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "You must be signed in."
+    });
+  }
+
+  req.user = user;
+
+  next();
+}
+
+function requireAdmin(
+  req,
+  res,
+  next
+) {
+  const user =
+    getCurrentUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "You must be signed in."
+    });
+  }
+
+  if (
+    user.username.toLowerCase() !==
+    ADMIN_USERNAME.toLowerCase()
+  ) {
+    return res.status(403).json({
+      error: "Admin access required."
+    });
+  }
+
+  req.user = user;
+
+  next();
+}
+
+
+/* =========================
+   MAINTENANCE
+========================= */
+
+app.use(
+  (req, res, next) => {
+
+    const publicPaths = [
+      "/api/login",
+      "/api/register",
+      "/api/me",
+      "/api/logout",
+      "/api/maintenance",
+      "/api/admin/status"
+    ];
+
+    if (
+      db.maintenance.enabled &&
+      !publicPaths.includes(req.path)
+    ) {
+      const user =
+        getCurrentUser(req);
+
+      const isAdminUser =
+        user &&
+        user.username.toLowerCase() ===
+          ADMIN_USERNAME.toLowerCase();
+
+      if (!isAdminUser) {
+
+        if (
+          req.path.startsWith(
+            "/api/"
+          )
+        ) {
+          return res.status(503).json({
+            error:
+              "NEXUS is currently under maintenance."
+          });
+        }
+
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <meta
+              name="viewport"
+              content="width=device-width,initial-scale=1"
+            >
+            <title>${escapeHTML(
+              db.maintenance.title
+            )}</title>
+            <style>
+              body {
+                margin:0;
+                min-height:100vh;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                background:#08080c;
+                color:#fff;
+                font-family:Arial,sans-serif;
+                padding:24px;
+                box-sizing:border-box;
+              }
+
+              .box {
+                width:min(600px,100%);
+                text-align:center;
+                padding:40px;
+                border:1px solid #262630;
+                border-radius:24px;
+                background:#111118;
+                box-shadow:0 20px 70px rgba(0,0,0,.4);
+              }
+
+              h1 {
+                margin:0 0 12px;
+              }
+
+              p {
+                color:#aaa;
+                line-height:1.6;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="box">
+              <h1>${escapeHTML(
+                db.maintenance.title
+              )}</h1>
+              <p>${escapeHTML(
+                db.maintenance.message
+              )}</p>
+            </div>
+          </body>
+          </html>
+        `);
+      }
+    }
+
+    next();
+  }
+);
+
+
 /* =========================
    AUTH
 ========================= */
 
-app.post("/api/register", (req, res) => {
-  const username = cleanText(
-    req.body.username,
-    24
-  );
+app.post(
+  "/api/register",
+  (req, res) => {
 
-  const password = String(
-    req.body.password || ""
-  );
-
-  if (
-    !/^[a-zA-Z0-9_.-]{3,24}$/.test(
-      username
-    )
-  ) {
-    return res.status(400).json({
-      error:
-        "Username must be 3-24 characters and use letters, numbers, _, ., or -."
-    });
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({
-      error:
-        "Password must be at least 8 characters."
-    });
-  }
-
-  const exists = db.users.some(
-    user =>
-      user.username.toLowerCase() ===
-      username.toLowerCase()
-  );
-
-  if (exists) {
-    return res.status(409).json({
-      error:
-        "That username already exists."
-    });
-  }
-
-  const { salt, hash } =
-    createPassword(password);
-
-  const user = {
-    id: crypto.randomUUID(),
-    username,
-    salt,
-    passwordHash: hash,
-    createdAt:
-      new Date().toISOString()
-  };
-
-  db.users.push(user);
-
-  db.history[user.id] = [];
-  db.saved[user.id] = [];
-
-  const token = createToken();
-
-  db.sessions.push({
-    token: tokenHash(token),
-    userId: user.id,
-    createdAt:
-      new Date().toISOString()
-  });
-
-  saveDB();
-
-  setSessionCookie(res, token);
-
-  res.json({
-    user: publicUser(user)
-  });
-});
-
-app.post("/api/login", (req, res) => {
-  const username = cleanText(
-    req.body.username,
-    24
-  );
-
-  const password = String(
-    req.body.password || ""
-  );
-
-  const user = db.users.find(
-    u =>
-      typeof u.username === "string" &&
-      u.username.toLowerCase() ===
-        username.toLowerCase()
-  );
-
-  if (
-    !user ||
-    !verifyPassword(
-      password,
-      user.salt,
-      user.passwordHash
-    )
-  ) {
-    return res.status(401).json({
-      error:
-        "Invalid username or password."
-    });
-  }
-
-  const token = createToken();
-
-  db.sessions.push({
-    token: tokenHash(token),
-    userId: user.id,
-    createdAt:
-      new Date().toISOString()
-  });
-
-  saveDB();
-
-  setSessionCookie(res, token);
-
-  res.json({
-    user: publicUser(user)
-  });
-});
-
-app.post("/api/logout", (req, res) => {
-  const token = getToken(req);
-
-  if (token) {
-    const hashed = tokenHash(token);
-
-    db.sessions =
-      db.sessions.filter(
-        session =>
-          session.token !== hashed
+    const username =
+      cleanText(
+        req.body.username,
+        32
       );
 
-    saveDB();
-  }
+    const password =
+      String(
+        req.body.password || ""
+      );
 
-  clearSessionCookie(res);
+    if (
+      !/^[a-zA-Z0-9_]{3,32}$/.test(
+        username
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          "Username must be 3-32 characters and use only letters, numbers, or underscores."
+      });
+    }
 
-  res.json({
-    ok: true
-  });
-});
+    if (password.length < 8) {
+      return res.status(400).json({
+        error:
+          "Password must be at least 8 characters."
+      });
+    }
 
-app.get("/api/me", (req, res) => {
-  const user = getUser(req);
+    const exists =
+      db.users.some(
+        user =>
+          user.username.toLowerCase() ===
+          username.toLowerCase()
+      );
 
-  if (!user) {
-    return res.status(401).json({
-      error: "Not logged in."
+    if (exists) {
+      return res.status(409).json({
+        error:
+          "That username is already taken."
+      });
+    }
+
+    const {
+      salt,
+      hash
+    } =
+      hashPassword(password);
+
+    const user = {
+      id:
+        crypto.randomUUID(),
+      username,
+      passwordHash: hash,
+      passwordSalt: salt,
+      createdAt: Date.now()
+    };
+
+    db.users.push(user);
+
+    if (!db.history[user.id]) {
+      db.history[user.id] = [];
+    }
+
+    if (!db.saved[user.id]) {
+      db.saved[user.id] = [];
+    }
+
+    const token =
+      createSession(user.id);
+
+    saveDatabase();
+
+    setSessionCookie(
+      res,
+      token
+    );
+
+    res.json({
+      user: publicUser(user)
     });
   }
+);
 
-  res.json({
-    user: publicUser(user)
-  });
-});
+
+app.post(
+  "/api/login",
+  (req, res) => {
+
+    const username =
+      cleanText(
+        req.body.username,
+        32
+      );
+
+    const password =
+      String(
+        req.body.password || ""
+      );
+
+    const user =
+      db.users.find(
+        item =>
+          item.username.toLowerCase() ===
+          username.toLowerCase()
+      );
+
+    if (
+      !user ||
+      !verifyPassword(
+        password,
+        user.passwordHash,
+        user.passwordSalt
+      )
+    ) {
+      return res.status(401).json({
+        error:
+          "Invalid username or password."
+      });
+    }
+
+    const token =
+      createSession(user.id);
+
+    setSessionCookie(
+      res,
+      token
+    );
+
+    res.json({
+      user: publicUser(user)
+    });
+  }
+);
+
+
+app.post(
+  "/api/logout",
+  (req, res) => {
+
+    const token =
+      getCookie(
+        req,
+        "nexus_session"
+      );
+
+    if (token) {
+
+      const tokenHash =
+        crypto
+          .createHash("sha256")
+          .update(token)
+          .digest("hex");
+
+      delete db.sessions[
+        tokenHash
+      ];
+
+      saveDatabase();
+    }
+
+    clearSessionCookie(res);
+
+    res.json({
+      success: true
+    });
+  }
+);
+
+
+app.get(
+  "/api/me",
+  (req, res) => {
+
+    const user =
+      getCurrentUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Not signed in."
+      });
+    }
+
+    res.json({
+      user: publicUser(user)
+    });
+  }
+);
+
+
+/* =========================
+   AI BACKEND
+========================= */
+
+app.post(
+  "/api/ai",
+  requireAuth,
+  async (req, res) => {
+
+    try {
+
+      if (!openai) {
+        return res.status(503).json({
+          error:
+            "NEXUS AI is not configured. Add OPENAI_API_KEY to your Railway environment variables."
+        });
+      }
+
+      const query =
+        cleanText(
+          req.body.query,
+          8000
+        );
+
+      if (!query) {
+        return res.status(400).json({
+          error:
+            "Please enter a question."
+        });
+      }
+
+      const response =
+        await openai.responses.create({
+          model: AI_MODEL,
+
+          instructions:
+            "You are NEXUS AI, the built-in assistant for the NEXUS search engine. Give clear, useful, accurate answers. Be concise unless the user asks for detail. Use simple formatting with short paragraphs and bullet points when useful. Do not pretend to have searched the web unless a web-search tool is actually enabled.",
+
+          input: query,
+
+          store: false
+        });
+
+      const answer =
+        response.output_text ||
+        "I couldn't generate an answer.";
+
+      res.json({
+        answer,
+        model: AI_MODEL
+      });
+
+    } catch (error) {
+
+      console.error(
+        "NEXUS AI ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        error:
+          "NEXUS AI couldn't respond right now."
+      });
+    }
+  }
+);
+
 
 /* =========================
    SEARCH
@@ -475,117 +791,148 @@ app.get("/api/me", (req, res) => {
 
 app.get(
   "/api/search",
+  requireAuth,
   async (req, res) => {
-    const query = cleanText(
-      req.query.q,
-      200
-    );
+
+    const query =
+      cleanText(
+        req.query.q,
+        300
+      );
 
     if (!query) {
       return res.status(400).json({
-        error: "Search query is empty."
+        error:
+          "Search query is required."
       });
     }
 
     try {
-      const url =
-        "https://en.wikipedia.org/api/rest_v1/page/summary/" +
-        encodeURIComponent(query);
 
-      const response = await fetch(
-        url,
-        {
+      const url =
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+          query
+        )}`;
+
+      const response =
+        await fetch(url, {
           headers: {
             "User-Agent":
-              "NEXUS-Search/3.0"
+              "NEXUS/1.0"
           }
-        }
-      );
+        });
 
       if (response.ok) {
+
         const data =
           await response.json();
 
-        const notFound =
-          data.type ===
-          "https://mediawiki.org/wiki/HyperSwitch/errors/not_found";
+        const result = {
+          title:
+            data.title ||
+            query,
 
-        if (!notFound && data.title) {
-          const result = {
-            title: stripHTML(
-              data.title
-            ),
-            description: stripHTML(
+          description:
+            stripHTML(
               data.extract ||
-                "No description available."
+              "No description available."
             ),
-            url:
-              data.content_urls
-                ?.desktop?.page ||
-              `https://en.wikipedia.org/wiki/${encodeURIComponent(
-                data.title.replace(
-                  / /g,
-                  "_"
-                )
-              )}`,
-            source: "Wikipedia",
-            image:
-              data.thumbnail?.source ||
-              null
-          };
 
-          const user = getUser(req);
+          url:
+            data.content_urls
+              ?.desktop
+              ?.page ||
+            `https://en.wikipedia.org/wiki/${encodeURIComponent(
+              query
+            )}`,
 
-          if (user) {
-            const list =
-              db.history[user.id] ||
-              [];
+          image:
+            data.thumbnail?.source ||
+            null,
 
-            list.unshift({
-              id: crypto.randomUUID(),
-              query,
-              title: result.title,
-              url: result.url,
-              createdAt:
-                new Date().toISOString()
-            });
+          source:
+            "Wikipedia"
+        };
 
-            db.history[user.id] =
-              list.slice(0, 50);
+        db.history[
+          req.user.id
+        ] ||= [];
 
-            saveDB();
-          }
+        db.history[
+          req.user.id
+        ].unshift({
+          id:
+            crypto.randomUUID(),
+          query,
+          title:
+            result.title,
+          url:
+            result.url,
+          createdAt:
+            Date.now()
+        });
 
-          return res.json({
-            mode: "result",
-            result
-          });
-        }
+        db.history[
+          req.user.id
+        ] =
+          db.history[
+            req.user.id
+          ].slice(0, 100);
+
+        saveDatabase();
+
+        return res.json({
+          mode: "result",
+          result
+        });
       }
 
-      return res.json({
-        mode: "fallback",
-        query,
-        message:
-          "NEXUS couldn't find a direct result for this search.",
-        fallback:
-          `https://www.google.com/search?q=${encodeURIComponent(
-            query
-          )}`
-      });
     } catch (error) {
       console.error(
-        "Search error:",
-        error.message
+        "SEARCH ERROR:",
+        error
       );
-
-      return res.status(500).json({
-        error:
-          "Search service temporarily unavailable."
-      });
     }
+
+    const fallback =
+      `https://www.google.com/search?q=${encodeURIComponent(
+        query
+      )}`;
+
+    db.history[
+      req.user.id
+    ] ||= [];
+
+    db.history[
+      req.user.id
+    ].unshift({
+      id:
+        crypto.randomUUID(),
+      query,
+      title:
+        query,
+      url:
+        fallback,
+      createdAt:
+        Date.now()
+    });
+
+    db.history[
+      req.user.id
+    ] =
+      db.history[
+        req.user.id
+      ].slice(0, 100);
+
+    saveDatabase();
+
+    res.json({
+      mode: "fallback",
+      fallback
+    });
   }
 );
+
 
 /* =========================
    HISTORY
@@ -595,27 +942,34 @@ app.get(
   "/api/history",
   requireAuth,
   (req, res) => {
+
     res.json({
       history:
-        db.history[req.user.id] ||
-        []
+        db.history[
+          req.user.id
+        ] || []
     });
   }
 );
+
 
 app.delete(
   "/api/history",
   requireAuth,
   (req, res) => {
-    db.history[req.user.id] = [];
 
-    saveDB();
+    db.history[
+      req.user.id
+    ] = [];
+
+    saveDatabase();
 
     res.json({
-      ok: true
+      success: true
     });
   }
 );
+
 
 /* =========================
    SAVED
@@ -625,98 +979,133 @@ app.get(
   "/api/saved",
   requireAuth,
   (req, res) => {
+
     res.json({
       saved:
-        db.saved[req.user.id] ||
-        []
+        db.saved[
+          req.user.id
+        ] || []
     });
   }
 );
+
 
 app.post(
   "/api/saved",
   requireAuth,
   (req, res) => {
-    const title = cleanText(
-      req.body.title,
-      200
-    );
 
-    const url = cleanText(
-      req.body.url,
-      1000
-    );
+    const title =
+      cleanText(
+        req.body.title,
+        500
+      );
+
+    const url =
+      cleanText(
+        req.body.url,
+        2000
+      );
 
     if (!title || !url) {
       return res.status(400).json({
         error:
-          "Invalid saved item."
+          "Title and URL are required."
       });
     }
 
-    const list =
-      db.saved[req.user.id] ||
-      [];
+    db.saved[
+      req.user.id
+    ] ||= [];
 
-    const exists = list.some(
-      item => item.url === url
-    );
-
-    if (!exists) {
-      list.unshift({
-        id: crypto.randomUUID(),
-        title,
-        url,
-        createdAt:
-          new Date().toISOString()
-      });
-    }
-
-    db.saved[req.user.id] =
-      list.slice(0, 100);
-
-    saveDB();
-
-    res.json({
-      ok: true
-    });
-  }
-);
-
-app.delete(
-  "/api/saved/:id",
-  requireAuth,
-  (req, res) => {
-    db.saved[req.user.id] =
-      (
-        db.saved[req.user.id] ||
-        []
-      ).filter(
+    const exists =
+      db.saved[
+        req.user.id
+      ].some(
         item =>
-          item.id !== req.params.id
+          item.url === url
       );
 
-    saveDB();
+    if (exists) {
+      return res.json({
+        success: true,
+        alreadySaved: true
+      });
+    }
+
+    db.saved[
+      req.user.id
+    ].unshift({
+      id:
+        crypto.randomUUID(),
+      title,
+      url,
+      createdAt:
+        Date.now()
+    });
+
+    db.saved[
+      req.user.id
+    ] =
+      db.saved[
+        req.user.id
+      ].slice(0, 200);
+
+    saveDatabase();
 
     res.json({
-      ok: true
+      success: true
     });
   }
 );
+
 
 app.delete(
   "/api/saved",
   requireAuth,
   (req, res) => {
-    db.saved[req.user.id] = [];
 
-    saveDB();
+    db.saved[
+      req.user.id
+    ] = [];
+
+    saveDatabase();
 
     res.json({
-      ok: true
+      success: true
     });
   }
 );
+
+
+app.delete(
+  "/api/saved/:id",
+  requireAuth,
+  (req, res) => {
+
+    db.saved[
+      req.user.id
+    ] ||= [];
+
+    db.saved[
+      req.user.id
+    ] =
+      db.saved[
+        req.user.id
+      ].filter(
+        item =>
+          item.id !==
+          req.params.id
+      );
+
+    saveDatabase();
+
+    res.json({
+      success: true
+    });
+  }
+);
+
 
 /* =========================
    ADMIN
@@ -726,9 +1115,10 @@ app.get(
   "/api/admin/status",
   requireAdmin,
   (req, res) => {
+
     res.json({
       maintenance:
-        db.maintenance.locked,
+        db.maintenance.enabled,
 
       title:
         db.maintenance.title,
@@ -736,220 +1126,107 @@ app.get(
       message:
         db.maintenance.message,
 
-      users: db.users.length,
+      users:
+        db.users.length,
 
       sessions:
-        db.sessions.length,
-
-      administrator:
-        ADMIN_USERNAME
+        Object.keys(
+          db.sessions
+        ).length
     });
   }
 );
+
 
 app.post(
   "/api/admin/lock",
   requireAdmin,
   (req, res) => {
-    const title =
-      cleanText(
-        req.body.title,
-        120
-      ) ||
-      "NEXUS is under maintenance";
-
-    const message =
-      cleanText(
-        req.body.message,
-        500
-      ) ||
-      "We're making improvements. Please check back soon.";
 
     db.maintenance = {
-      locked: true,
-      title,
-      message
+      enabled: true,
+
+      title:
+        cleanText(
+          req.body.title,
+          200
+        ) ||
+        "NEXUS is temporarily offline",
+
+      message:
+        cleanText(
+          req.body.message,
+          1000
+        ) ||
+        "The website is currently undergoing maintenance."
     };
 
-    saveDB();
+    saveDatabase();
 
     res.json({
-      ok: true,
-      maintenance: true
+      success: true
     });
   }
 );
+
 
 app.post(
   "/api/admin/unlock",
   requireAdmin,
   (req, res) => {
-    db.maintenance.locked = false;
 
-    saveDB();
+    db.maintenance.enabled =
+      false;
+
+    saveDatabase();
 
     res.json({
-      ok: true,
-      maintenance: false
+      success: true
     });
   }
 );
 
-app.get(
-  "/api/admin/users",
-  requireAdmin,
-  (req, res) => {
-    res.json({
-      users: db.users.map(
-        user => publicUser(user)
-      )
-    });
-  }
-);
 
 /* =========================
-   MAINTENANCE PAGE
+   PUBLIC MAINTENANCE STATUS
 ========================= */
 
-function maintenancePage() {
-  const title = escapeHTML(
-    cleanText(
-      db.maintenance.title,
-      120
-    )
-  );
+app.get(
+  "/api/maintenance",
+  (req, res) => {
 
-  const message = escapeHTML(
-    cleanText(
-      db.maintenance.message,
-      500
-    )
-  );
+    res.json({
+      enabled:
+        db.maintenance.enabled,
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} • NEXUS</title>
+      title:
+        db.maintenance.title,
 
-<style>
-*{
-  box-sizing:border-box;
-}
+      message:
+        db.maintenance.message
+    });
+  }
+);
 
-body{
-  margin:0;
-  min-height:100vh;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:24px;
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  background:#07090d;
-  color:#fff;
-}
-
-.card{
-  width:min(620px,100%);
-  padding:42px;
-  border:1px solid #252a35;
-  border-radius:28px;
-  background:#0e1118;
-  box-shadow:
-    0 30px 100px
-    rgba(0,0,0,.45);
-}
-
-.logo{
-  font-size:14px;
-  font-weight:900;
-  letter-spacing:.2em;
-  margin-bottom:40px;
-}
-
-.badge{
-  display:inline-block;
-  padding:8px 12px;
-  border-radius:999px;
-  background:#1b202b;
-  color:#aeb7c8;
-  font-size:12px;
-  font-weight:800;
-  letter-spacing:.08em;
-}
-
-h1{
-  font-size:
-    clamp(32px,7vw,56px);
-  line-height:1;
-  margin:22px 0 16px;
-}
-
-p{
-  color:#9ca5b5;
-  font-size:16px;
-  line-height:1.7;
-}
-</style>
-
-</head>
-
-<body>
-
-<div class="card">
-
-<div class="logo">
-NEXUS
-</div>
-
-<div class="badge">
-● MAINTENANCE
-</div>
-
-<h1>
-${title}
-</h1>
-
-<p>
-${message}
-</p>
-
-</div>
-
-</body>
-</html>`;
-}
 
 /* =========================
-   STATIC APP
+   STATIC FILES
 ========================= */
 
 app.use(
-  express.static(PUBLIC_DIR)
+  express.static(
+    PUBLIC_DIR
+  )
 );
+
+
+/* =========================
+   EXPRESS 5 FALLBACK
+========================= */
 
 app.get(
   "*splat",
   (req, res) => {
-    const user = getUser(req);
-
-    if (
-      db.maintenance.locked &&
-      !isAdmin(user)
-    ) {
-      return res
-        .status(503)
-        .send(
-          maintenancePage()
-        );
-    }
 
     res.sendFile(
       path.join(
@@ -960,6 +1237,7 @@ app.get(
   }
 );
 
+
 /* =========================
    START
 ========================= */
@@ -967,8 +1245,17 @@ app.get(
 app.listen(
   PORT,
   () => {
+
     console.log(
       `NEXUS running on port ${PORT}`
+    );
+
+    console.log(
+      `AI backend: ${
+        openai
+          ? `enabled (${AI_MODEL})`
+          : "disabled - missing OPENAI_API_KEY"
+      }`
     );
   }
 );
